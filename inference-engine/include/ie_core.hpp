@@ -21,6 +21,8 @@
 
 namespace InferenceEngine {
 
+class ICacheManager; // forward declaration
+
 /**
  * @brief This class represents Inference Engine Core entity.
  *
@@ -104,6 +106,24 @@ public:
     ExecutableNetwork LoadNetwork(
         const CNNNetwork& network, const std::string& deviceName,
         const std::map<std::string, std::string>& config = {});
+
+    /**
+     * @brief Reads model and creates an executable network from IR or ONNX file
+     *
+     * This can be more efficient than using Code::ReadNetwork + Code::LoadNetwork(CNNNetwork) flow
+     *        especially for cases when caching is enabled and cached model is available
+     * TODO: mnosov <link to caching mechanism overview>
+     *
+     * @param modelPath path to model
+     * @param deviceName Name of device to load network to
+     * @param config Optional map of pairs: (config parameter name, config parameter value) relevant only for this load
+     * operation/
+     *
+     * @return An executable network reference
+     */
+    ExecutableNetwork LoadNetwork(
+        const std::string & modelPath, const std::string & deviceName,
+        const std::map<std::string, std::string>&config = {});
 
     /**
      * @brief Registers extension
@@ -287,5 +307,15 @@ public:
      * @return A shared pointer to a default remote context.
      */
     RemoteContext::Ptr GetDefaultContext(const std::string& deviceName);
+
+    /**
+     * @brief Sets a pointer to cache manager.
+     *
+     * The method is needed for applications required to override default Read/Write cached model operations
+     * By default caching to file is enabled
+     *
+     * @param cacheManager  - shared pointer to custom ICacheManager object
+     */
+    void SetCacheManager(const std::shared_ptr<ICacheManager>& cacheManager);
 };
 }  // namespace InferenceEngine

@@ -19,12 +19,15 @@
 #include "compilation_context.hpp"
 #include "ie_plugin_cpp.hpp"
 #include "ie_plugin_config.hpp"
+#include "ie_cache_manager.hpp"
+#include "cache_context_impl.hpp"
 #include "ie_itt.hpp"
 #include "file_utils.h"
 #include "ie_network_reader.hpp"
 #include "xml_parse_utils.h"
 
 using namespace InferenceEngine::PluginConfigParams;
+using namespace std::placeholders;
 
 namespace InferenceEngine {
 
@@ -157,6 +160,7 @@ class Core::Impl : public ICore {
     ITaskExecutor::Ptr _taskExecutor = nullptr;
 
     mutable std::map<std::string, InferencePlugin> plugins;
+    Core& _core;
 
     class CoreConfig final {
         std::string _modelCacheDir {};
@@ -250,53 +254,6 @@ class Core::Impl : public ICore {
         }
     };
 
-    class CacheManager {
-    public:
-        using Ptr = std::shared_ptr<CacheManager>;
-        virtual ~CacheManager() = default;
-
-        virtual std::shared_ptr<std::ostream> writeCacheEntry(const std::string & id) = 0;
-        virtual std::shared_ptr<std::istream> readCacheEntry(const std::string & id) = 0;
-        virtual void removeCacheEntry(const std::string & id) = 0;
-    };
-
-    class FileStorageCacheManager final : public CacheManager {
-        std::string m_modelCacheDir;
-
-        std::string getBlobFile(const std::string & blobHash) const {
-            return FileUtils::makePath(m_modelCacheDir, blobHash + ".blob");
-        }
-
-    public:
-        explicit FileStorageCacheManager(const std::string & modelCacheDir) :
-            m_modelCacheDir(modelCacheDir) {
-        }
-
-        ~FileStorageCacheManager() override = default;
-
-        std::shared_ptr<std::ostream> writeCacheEntry(const std::string & blobHash) override {
-            auto stream = std::make_shared<std::ofstream>(getBlobFile(blobHash), std::ios_base::binary);
-            return stream;
-        }
-
-        void removeCacheEntry(const std::string & blobHash) override {
-            auto blobFileName = getBlobFile(blobHash);
-            if (FileUtils::fileExist(blobFileName))
-                std::remove(blobFileName.c_str());
-        }
-
-        std::shared_ptr<std::istream> readCacheEntry(const std::string & blobHash) override {
-            auto blobFileName = getBlobFile(blobHash);
-            std::shared_ptr<std::istream> stream;
-
-            if (FileUtils::fileExist(blobFileName)) {
-                stream = std::make_shared<std::ifstream>(blobFileName, std::ios_base::binary);
-            }
-
-            return stream;
-        }
-    };
-
     // Core settings for specific devices
     mutable std::map<std::string, CoreConfig> coreConfig;
 
@@ -308,17 +265,31 @@ class Core::Impl : public ICore {
 
     std::unordered_set<std::string> opsetNames;
     std::vector<IExtensionPtr> extensions;
-    CacheManager::Ptr cacheManager;
+    std::shared_ptr<ICacheManager> cacheManager;
 
     std::map<std::string, PluginDescriptor> pluginRegistry;
     mutable std::mutex pluginsMutex;  // to lock parallel access to pluginRegistry and plugins
 
-    ExecutableNetwork LoadNetworkImpl(const CNNNetwork& network, const std::string& deviceName,
-                                      std::map<std::string, std::string> _config,
-                                      const RemoteContext::Ptr & context) {
-        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::LoadNetwork");
+    ExecutableNetwork LoadNetworkImpl(const std::string& modelPath, const std::string& deviceName,
+        const std::map<std::string, std::string> & config,
+        const RemoteContext::Ptr& context) {
+        THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED) << "mnosov: TBD";
+    }
 
-        auto parsed = parseDeviceNameIntoConfig<std::string>(deviceName, _config);
+    ExecutableNetwork LoadNetworkImpl(const CNNNetwork& network, const std::string& deviceName,
+                                      const std::map<std::string, std::string> & config,
+                                      const RemoteContext::Ptr & context) {
+  //      NetworkCompilationContext context(network, compileConfig);
+        return DoLoadNetworkImpl(network, deviceName, config, context);
+    }
+
+    ExecutableNetwork DoLoadNetworkImpl(const CNNNetwork & network, const std::string & deviceName,
+                                        const std::map<std::string, std::string> & configMap,
+                                        const RemoteContext::Ptr & context) {
+
+        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::DoLoadNetworkImpl");
+
+        auto parsed = parseDeviceNameIntoConfig<std::string>(deviceName, configMap);
         auto config = parsed._config;
         std::string deviceFamily = parsed._deviceName; // MULTI:CPU -> MULTI, GPU.0 -> GPU, CPU -> CPU and so on
 
@@ -369,9 +340,6 @@ class Core::Impl : public ICore {
         {
             modelCacheEnabled = true;
             modelCacheDir = getIELibraryPath();
-
-            // TODO: don't create it every time
-            cacheManager = std::make_shared<FileStorageCacheManager>(modelCacheDir);
         }
 
         if (modelCacheEnabled && deviceSupportsImport(this)) {
@@ -418,16 +386,13 @@ class Core::Impl : public ICore {
         ExecutableNetwork execNetwork;
 
         if (cachingIsAvailable) {
+            std::unique_ptr<CacheManagerContextImpl> cacheManCtxtInternal{ new CacheManagerContextImpl(_core, deviceName, modelCacheDir) };
+            CacheManagerContext cacheManContext{ std::move(cacheManCtxtInternal) };
             try {
                 OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::ImportNetwork");
                 std::cerr << "try to import from core to " << deviceFamily << "\n\n" << std::endl;
 
-                auto networkStreamPtr = cacheManager->readCacheEntry(blobID);
-
-                // blob is in cache
-                if (networkStreamPtr) {
-                    std::istream & networkStream = *networkStreamPtr;
-
+                cacheManager->readCacheEntry(blobID, std::bind([&](std::istream& networkStream) {
                     CompiledBlobHeader header;
                     networkStream >> header;
 
@@ -443,28 +408,30 @@ class Core::Impl : public ICore {
                         ImportNetwork(networkStream, deviceFamily, config);
                     networkIsImported = true;
                     std::cerr << "Network is imported to " << deviceFamily << std::endl;
-                }
+                }, _1), cacheManContext);
+
+                // blob is in cache
             } catch (const NotImplemented &) {
                 // 1. Device does not support ImportNetwork / Export flow
                 std::cerr << "[BUG] Import is not implemented O_o " << deviceFamily << std::endl;
-                cacheManager->removeCacheEntry(blobID);
+                cacheManager->removeCacheEntry(blobID, cacheManContext);
             } catch (const NetworkNotRead & ex) {
                 // 2. Device supports this flow, but failed to import network for some reason
                 //    (e.g. device arch is not compatible with device arch network compiled for
                 //     e.g. compiled for MYX, but current device is M2 stick)
                 std::cerr << "!!" << ex.what() << std::endl;
                 std::cerr << "NetworkNotRead: try to export one more time (remove blob!!) " << deviceFamily << std::endl;
-                cacheManager->removeCacheEntry(blobID);
+                cacheManager->removeCacheEntry(blobID, cacheManContext);
             } catch (const std::exception & ex) {
                 std::string message = ex.what();
-                bool appleRTTI = message.find("NOT IMPLMENENTED") != std::string::npos;
+                bool appleRTTI = message.find("NOT IMPLEMENTED") != std::string::npos;
 
                 if (appleRTTI) { // Apple RTTI
                     std::cerr << "Apple RTTI: " << ex.what() << std::endl;
-                    cacheManager->removeCacheEntry(blobID);
+                    cacheManager->removeCacheEntry(blobID, cacheManContext);
                 } else { // some issues because of import failed
                     std::cerr << "[BUG] Import failed for " << deviceFamily << "(" << message << ")" << std::endl;
-                    cacheManager->removeCacheEntry(blobID);
+                    cacheManager->removeCacheEntry(blobID, cacheManContext);
                 }
             }
         }
@@ -474,26 +441,25 @@ class Core::Impl : public ICore {
                 OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::LoadNetwork");
                 // to limit plugin scope
                 auto plugin = GetCPPPluginByName(deviceFamily);
-                execNetwork = context ? plugin.LoadNetwork(network, config) :
-                                        plugin.LoadNetwork(network, context, config);
+                execNetwork = context ? plugin.LoadNetwork(network, context, config) :
+                                        plugin.LoadNetwork(network, config);
             }
 
             if (cachingIsAvailable) {
+                std::unique_ptr<CacheManagerContextImpl> cacheManCtxtInternal(new CacheManagerContextImpl(_core, deviceName, modelCacheDir));
+                CacheManagerContext cacheManContext{ std::move(cacheManCtxtInternal) };
                 try {
                     // need to export network for further import from "cache"
-                    {
-                        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Export");
-                        auto networkStreamPtr = cacheManager->writeCacheEntry(blobID);
-                        IE_ASSERT(networkStreamPtr != nullptr);
-                        std::ostream & networkStream = *networkStreamPtr;
+                    OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Export");
+                    cacheManager->writeCacheEntry(blobID, std::bind([&](std::ostream& networkStream) {
                         networkStream << CompiledBlobHeader(GetInferenceEngineVersion()->buildNumber);
                         execNetwork.Export(networkStream);
                         std::cerr << "Network is exported for " << deviceFamily
                             << " as " << blobID << std::endl;
-                    }
+                        }, _1), cacheManContext);
                 } catch (const NotImplemented &) {
                     // 1. Network export flow is not implemented in device
-                    cacheManager->removeCacheEntry(blobID);
+                    cacheManager->removeCacheEntry(blobID, cacheManContext);
 
                     std::cerr << "Export is not implemented " << deviceFamily << std::endl;
                 } catch (const std::exception & ex) {
@@ -502,10 +468,10 @@ class Core::Impl : public ICore {
 
                     if (appleRTTI) { // APPLE RTTI issue
                         std::cerr << "Apple RTTI: " << message << std::endl;
-                        cacheManager->removeCacheEntry(blobID);
+                        cacheManager->removeCacheEntry(blobID, cacheManContext);
                     } else { // network cannot be exported due to plugin bugs
                         std::cerr << "[BUG] Failed to export model " << ex.what() << std::endl;
-                        cacheManager->removeCacheEntry(blobID);
+                        cacheManager->removeCacheEntry(blobID, cacheManContext);
                     }
                 }
             }
@@ -515,7 +481,7 @@ class Core::Impl : public ICore {
     }
 
 public:
-    Impl() {
+    Impl(Core &core): _core(core), cacheManager(std::make_shared<FileStorageCacheManager>()) {
         opsetNames.insert("opset1");
         opsetNames.insert("opset2");
         opsetNames.insert("opset3");
@@ -623,6 +589,12 @@ public:
     ExecutableNetwork LoadNetwork(const CNNNetwork& network, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) override {
         return LoadNetworkImpl(network, deviceName, config, nullptr);
+    }
+
+    // TODO: mnosov: do we really need this in ICore class (pure virtual method)?
+    ExecutableNetwork LoadNetwork(const std::string& modelPath, const std::string& deviceName,
+        const std::map<std::string, std::string>& config) {
+        return LoadNetworkImpl(modelPath, deviceName, config, nullptr);
     }
 
     ExecutableNetwork ImportNetwork(std::istream& networkModel, const std::string& deviceName,
@@ -823,6 +795,7 @@ public:
                 // copy config since it's going to be modified
                 auto configCopy = config;
                 // extract common options to core config
+                // TODO: mnosov: will cause a double lock of pluginsMutex (CoreConfig->checkPluginSupportsKey->getMetric->getCPPPlugin
                 coreConfig[desc.first] = CoreConfig(this, deviceName, configCopy, coreConfig[desc.first]);
                 // the rest of the options are to device itself
                 for (auto&& conf : configCopy) {
@@ -881,10 +854,14 @@ public:
     const std::vector<IExtensionPtr>& GetExtensions() const {
         return extensions;
     }
+
+    void SetCacheManager(const std::shared_ptr<ICacheManager>& cacheManager_) {
+        cacheManager = cacheManager_;
+    }
 };
 
 Core::Core(const std::string& xmlConfigFile) {
-    _impl = std::make_shared<Impl>();
+    _impl = std::make_shared<Impl>(*this);
 
     std::string xmlConfigFile_ = xmlConfigFile;
     if (xmlConfigFile_.empty()) {
@@ -956,6 +933,11 @@ ExecutableNetwork Core::LoadNetwork(const CNNNetwork& network, const std::string
 ExecutableNetwork Core::LoadNetwork(const CNNNetwork& network, RemoteContext::Ptr context,
                                     const std::map<std::string, std::string>& config) {
     return _impl->LoadNetwork(network, context, config);
+}
+
+ExecutableNetwork Core::LoadNetwork(const std::string& modelPath, const std::string& deviceName,
+                                    const std::map<std::string, std::string>& config) {
+    return _impl->LoadNetwork(modelPath, deviceName, config);
 }
 
 RemoteContext::Ptr Core::CreateContext(const std::string& deviceName, const ParamMap& params) {
@@ -1134,6 +1116,10 @@ void Core::UnregisterPlugin(const std::string& deviceName_) {
     std::string deviceName = parser.getDeviceName();
 
     _impl->UnloadPluginByName(deviceName);
+}
+
+void Core::SetCacheManager(const std::shared_ptr<ICacheManager>& cacheManager) {
+    _impl->SetCacheManager(cacheManager);
 }
 
 }  // namespace InferenceEngine

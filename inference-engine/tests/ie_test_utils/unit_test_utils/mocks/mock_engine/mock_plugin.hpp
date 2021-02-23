@@ -24,5 +24,11 @@ public:
     LoadExeNetworkImpl(const InferenceEngine::CNNNetwork& network,
                        const std::map<std::string, std::string>& config) override;
 
+    InferenceEngine::ExecutableNetwork ImportNetworkImpl(std::istream& networkModel,
+        const std::map<std::string, std::string>& config) override;
+
+    InferenceEngine::Parameter GetMetric(const std::string& name,
+                        const std::map<std::string, InferenceEngine::Parameter>& options) const override;
+
     std::map<std::string, std::string> config;
 };

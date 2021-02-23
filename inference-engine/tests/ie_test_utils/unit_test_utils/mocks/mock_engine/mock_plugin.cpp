@@ -22,6 +22,15 @@ void MockPlugin::SetConfig(const std::map<std::string, std::string>& config) {
     this->config = config;
 }
 
+Parameter MockPlugin::GetMetric(const std::string& name, const std::map<std::string, InferenceEngine::Parameter>& options) const {
+    if (_target) {
+        return _target->GetMetric(name, options);
+    }
+    else {
+        THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
+    }
+}
+
 ExecutableNetwork
 MockPlugin::LoadNetwork(const CNNNetwork &network,
                         const std::map<std::string, std::string> &config) {
@@ -37,6 +46,17 @@ MockPlugin::LoadExeNetworkImpl(const InferenceEngine::CNNNetwork& network,
                                const std::map<std::string, std::string>& config) {
     return {};
 }
+
+InferenceEngine::ExecutableNetwork MockPlugin::ImportNetworkImpl(std::istream& networkModel,
+    const std::map<std::string, std::string>& config) {
+    if (_target) {
+        return _target->ImportNetwork(networkModel, config);
+    }
+    else {
+        THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
+    }
+}
+
 
 InferenceEngine::IInferencePlugin *__target = nullptr;
 
