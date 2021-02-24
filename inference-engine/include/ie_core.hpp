@@ -112,7 +112,6 @@ public:
      *
      * This can be more efficient than using Code::ReadNetwork + Code::LoadNetwork(CNNNetwork) flow
      *        especially for cases when caching is enabled and cached model is available
-     * TODO: mnosov <link to caching mechanism overview>
      *
      * @param modelPath path to model
      * @param deviceName Name of device to load network to
