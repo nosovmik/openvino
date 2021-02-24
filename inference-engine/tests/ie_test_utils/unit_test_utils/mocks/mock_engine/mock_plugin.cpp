@@ -25,8 +25,7 @@ void MockPlugin::SetConfig(const std::map<std::string, std::string>& config) {
 Parameter MockPlugin::GetMetric(const std::string& name, const std::map<std::string, InferenceEngine::Parameter>& options) const {
     if (_target) {
         return _target->GetMetric(name, options);
-    }
-    else {
+    } else {
         THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
     }
 }
@@ -51,8 +50,7 @@ InferenceEngine::ExecutableNetwork MockPlugin::ImportNetworkImpl(std::istream& n
     const std::map<std::string, std::string>& config) {
     if (_target) {
         return _target->ImportNetwork(networkModel, config);
-    }
-    else {
+    } else {
         THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
     }
 }

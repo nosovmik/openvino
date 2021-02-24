@@ -80,12 +80,10 @@ public:
     Parameter GetMetric(const std::string& name, const std::map<std::string, InferenceEngine::Parameter>& options) const override {
         if (METRIC_KEY(SUPPORTED_METRICS) == name) {
             return std::vector<std::string> {};
-        }
-        else {
+        } else {
             THROW_IE_EXCEPTION << "Unsupported device metric: " << name;
         }
     }
-
 };
 
 void DummyExecutableNetwork::ExportImpl(std::ostream& networkModel) {

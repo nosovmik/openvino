@@ -286,7 +286,6 @@ class Core::Impl : public ICore {
     ExecutableNetwork DoLoadNetworkImpl(const CNNNetwork & network, const std::string & deviceName,
                                         const std::map<std::string, std::string> & configMap,
                                         const RemoteContext::Ptr & context) {
-
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::DoLoadNetworkImpl");
 
         auto parsed = parseDeviceNameIntoConfig<std::string>(deviceName, configMap);

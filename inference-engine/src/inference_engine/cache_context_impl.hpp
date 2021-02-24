@@ -21,12 +21,11 @@ class CacheManagerContextImpl {
     std::string m_modelCacheDir;
 public:
     CacheManagerContextImpl(const Core& core, const std::string& deviceName, const std::string& modelCacheDir):
-        m_core (core), m_deviceName(deviceName), m_modelCacheDir (modelCacheDir) {
+        m_core(core), m_deviceName(deviceName), m_modelCacheDir(modelCacheDir) {
     }
     const Core& getCore() const { return m_core; }
     const std::string& getDeviceName() const { return m_deviceName; }
     const std::string& getModelCacheDir() const { return m_modelCacheDir; }
-
 };
 
 }  // namespace InferenceEngine

@@ -18,7 +18,8 @@ class FileStorageCacheManager::Impl {
 public:
     void writeCacheEntry(const std::string& blobHash, ICacheManager::StreamWriter writer,
         const CacheManagerContext& cacheManContext) {
-        writer(std::ofstream(getBlobFile(blobHash, cacheManContext), std::ios_base::binary));
+        std::ofstream stream(getBlobFile(blobHash, cacheManContext), std::ios_base::binary | std::ofstream::out);
+        writer(stream);
     }
 
     void removeCacheEntry(const std::string& blobHash,
@@ -32,9 +33,9 @@ public:
         const CacheManagerContext& cacheManContext) {
         auto blobFileName = getBlobFile(blobHash, cacheManContext);
         if (FileUtils::fileExist(blobFileName)) {
-            reader(std::ifstream(blobFileName, std::ios_base::binary));
+            std::ifstream stream(blobFileName, std::ios_base::binary);
+            reader(stream);
         }
-
     }
 };
 
