@@ -109,8 +109,7 @@ public:
     }
 
     void SetUp() override {
-        // TODO: mnosov: clear cache dir (in case of previous test run didn't complete successfully)
-//        CommonTestUtils::removeDir("testCache");
+        CommonTestUtils::makeDir("testCache");
         m_plugin = std::make_shared<CachingInferencePlugin>();
         std::string libraryName = get_mock_engine_name();
         sharedObjectLoader.reset(new SharedObjectLoader(libraryName.c_str()));
@@ -120,14 +119,15 @@ public:
         FuncTestUtils::TestModel::generateTestModel(modelName, weightsName);
 
         ie.RegisterPlugin(std::string("mock_engine") + IE_BUILD_POSTFIX, deviceName);
-//        ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} }); // TODO: mnosov: doesn't work now (double mutex lock)
+        ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
     }
 
     void TearDown() override {
         m_plugin = nullptr;
         CommonTestUtils::removeIRFiles(modelName, weightsName);
-        // TODO: mnosov: remove all cache entries
-//        CommonTestUtils::removeDir("testCache");
+        // remove all cache entries
+        CommonTestUtils::removeFilesWithExt("testCache", "blob");
+        CommonTestUtils::removeDir("testCache");
 
         ie.UnregisterPlugin(deviceName);
     }

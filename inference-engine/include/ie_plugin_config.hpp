@@ -376,13 +376,13 @@ DECLARE_CONFIG_KEY(ENFORCE_BF16);
  * The key might enable caching for the plugin using the following code:
  *
  * @code
- * ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "cache/"}}, {"GPU"}); // enables cache for GPU plugin
+ * ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "cache/"}}, "GPU"); // enables cache for GPU plugin
  * @endcode
  *
- * Enables compiled caching of compiled network blobs for devices, like `KMB`:
+ * Enables caching of compiled network blobs for devices where import/export is supported
  *
  * @code
- * ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "cache/"}}, {"KMB"}); // enables models cache for KMB plugin
+ * ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "cache/"}}); // enables models cache
  * @endcode
  *
  * @note This key supports unicode symbols in path

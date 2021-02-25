@@ -21,8 +21,6 @@
 
 namespace InferenceEngine {
 
-class ICacheManager; // forward declaration
-
 /**
  * @brief This class represents Inference Engine Core entity.
  *
@@ -204,7 +202,8 @@ public:
      * @brief Sets configuration for device, acceptable keys can be found in ie_plugin_config.hpp
      *
      * @param deviceName An optional name of a device. If device name is not specified, the config is set for all the
-     * registered devices.
+     * registered devices. The special case is CACHE_DIR global key. When "CACHE_DIR" is enabled for all devices,
+     * model caching is enabled for all supported devices. Devices which don't support model caching will ignore this config setting
      *
      * @param config Map of pairs: (config parameter name, config parameter value)
      */
@@ -306,15 +305,5 @@ public:
      * @return A shared pointer to a default remote context.
      */
     RemoteContext::Ptr GetDefaultContext(const std::string& deviceName);
-
-    /**
-     * @brief Sets a pointer to cache manager.
-     *
-     * The method is needed for applications required to override default Read/Write cached model operations
-     * By default caching to file is enabled
-     *
-     * @param cacheManager  - shared pointer to custom ICacheManager object
-     */
-    void SetCacheManager(const std::shared_ptr<ICacheManager>& cacheManager);
 };
 }  // namespace InferenceEngine
