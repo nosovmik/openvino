@@ -149,6 +149,11 @@ DECLARE_METRIC_KEY(NUMBER_OF_EXEC_INFER_REQUESTS, unsigned int);
 DECLARE_METRIC_KEY(DEVICE_ARCHITECTURE, std::string);
 
 /**
+ * @brief Metric which defines support of import/export functions by plugin
+ */
+DECLARE_METRIC_KEY(IMPORT_EXPORT_SUPPORT, bool);
+
+/**
  * @brief Metric to get a name of network. String value is "NETWORK_NAME".
  */
 DECLARE_EXEC_NETWORK_METRIC_KEY(NETWORK_NAME, std::string);

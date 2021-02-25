@@ -307,7 +307,7 @@ int main(int argc, char *argv[]) {
         for (auto&& item : config) {
             ie.SetConfig(item.second, item.first);
         }
-
+        ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "cacheBenchmark"} });
         auto double_to_string = [] (const double number) {
             std::stringstream ss;
             ss << std::fixed << std::setprecision(2) << number;

@@ -49,7 +49,17 @@ class CachingInferencePlugin : public InferenceEngine::InferencePluginInternal {
 public:
     int m_loadNetworkCalled = 0;
     int m_importNetworkCalled = 0;
+    mutable int m_getMetricCalled = 0;
     int m_exportCalled = 0;
+    bool m_supportImportExport = true;
+
+    void resetCounters() {
+        m_loadNetworkCalled = 0;
+        m_importNetworkCalled = 0;
+        m_getMetricCalled = 0;
+        m_exportCalled = 0;
+    }
+
     ~CachingInferencePlugin() override = default;
 
     ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network,
@@ -79,7 +89,13 @@ public:
 
     Parameter GetMetric(const std::string& name, const std::map<std::string, InferenceEngine::Parameter>& options) const override {
         if (METRIC_KEY(SUPPORTED_METRICS) == name) {
-            return std::vector<std::string> {};
+            std::vector<std::string> supportedMetrics = {
+                METRIC_KEY(IMPORT_EXPORT_SUPPORT)
+            };
+            return supportedMetrics;
+        } else if (METRIC_KEY(IMPORT_EXPORT_SUPPORT) == name) {
+            m_getMetricCalled++;
+            return m_supportImportExport;
         } else {
             THROW_IE_EXCEPTION << "Unsupported device metric: " << name;
         }
@@ -119,7 +135,6 @@ public:
         FuncTestUtils::TestModel::generateTestModel(modelName, weightsName);
 
         ie.RegisterPlugin(std::string("mock_engine") + IE_BUILD_POSTFIX, deviceName);
-        ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
     }
 
     void TearDown() override {
@@ -132,6 +147,10 @@ public:
         ie.UnregisterPlugin(deviceName);
     }
 
+    void enableCacheConfig() {
+        ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
+    }
+
 private:
     template <class T>
     std::function<T> make_std_function(const std::string& functionName) {
@@ -141,6 +160,7 @@ private:
 };
 
 TEST_F(CachingTest, Test1) {
+    enableCacheConfig();
     auto performReadAndLoad = [&] {
         auto cnnNetwork = ie.ReadNetwork(modelName);
         auto exeNet = ie.LoadNetwork(cnnNetwork, deviceName);
@@ -150,20 +170,83 @@ TEST_F(CachingTest, Test1) {
     { // Step 1: read and load network without cache
         performReadAndLoad();
 
-        EXPECT_GT(m_plugin->m_loadNetworkCalled, 0); // verify: 'load was called'
-        EXPECT_GT(m_plugin->m_exportCalled, 0); // verify: 'export was called'
+        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCalled, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCalled, 0); // verify: 'import was not called'
     }
 
-    m_plugin->m_loadNetworkCalled = 0;
-    m_plugin->m_exportCalled = 0;
-    m_plugin->m_importNetworkCalled = 0;
+    m_plugin->resetCounters();
 
     { // Step 2: same load, but now cache must be available from Step 1
         performReadAndLoad();
 
+        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkCalled, 0); // verify: 'load was not called' (optimization works)
         EXPECT_EQ(m_plugin->m_exportCalled, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_GT(m_plugin->m_importNetworkCalled, 0); // verify: 'import was called instead of load + export'
+        EXPECT_EQ(m_plugin->m_importNetworkCalled, 1); // verify: 'import was called instead of load + export'
     }
 }
 
+TEST_F(CachingTest, TestLoadByName) {
+    enableCacheConfig();
+    auto performLoadByName = [&] {
+        auto exeNet = ie.LoadNetwork(modelName, deviceName);
+        (void)exeNet;
+    };
+
+    { // Step 1: read and load network without cache
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCalled, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCalled, 0); // verify: 'import was not called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 2: same load, but now cache must be available from Step 1
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 0); // verify: 'load was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_exportCalled, 0); // verify: 'export was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_importNetworkCalled, 1); // verify: 'import was called instead of load + export'
+    }
+}
+
+TEST_F(CachingTest, TestLoadByName_NoCacheSupported1) {
+    enableCacheConfig();                     // Enable caching in global settings
+    m_plugin->m_supportImportExport = false; // but it is not supported by plugin
+
+    auto performLoadByName = [&] {
+        auto exeNet = ie.LoadNetwork(modelName, deviceName);
+        (void)exeNet;
+    };
+
+    { // read and load network without cache
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCalled, 0); // verify: 'export was not called'
+        EXPECT_EQ(m_plugin->m_importNetworkCalled, 0); // verify: 'import was not called'
+    }
+}
+
+TEST_F(CachingTest, TestLoadByName_NoCacheEnabled) {
+    auto performLoadByName = [&] {
+        auto exeNet = ie.LoadNetwork(modelName, deviceName);
+        (void)exeNet;
+    };
+
+    { // read and load network without cache
+        performLoadByName();
+
+        EXPECT_EQ(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was not called when global cache is disabled'
+        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCalled, 0); // verify: 'export was not called'
+        EXPECT_EQ(m_plugin->m_importNetworkCalled, 0); // verify: 'import was not called'
+    }
+}

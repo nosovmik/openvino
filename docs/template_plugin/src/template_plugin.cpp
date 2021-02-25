@@ -240,6 +240,7 @@ InferenceEngine::Parameter Plugin::GetMetric(const std::string& name, const std:
             METRIC_KEY(SUPPORTED_CONFIG_KEYS),
             METRIC_KEY(FULL_DEVICE_NAME),
             METRIC_KEY(OPTIMIZATION_CAPABILITIES),
+            METRIC_KEY(IMPORT_EXPORT_SUPPORT),
             METRIC_KEY(DEVICE_ARCHITECTURE),
             METRIC_KEY(RANGE_FOR_ASYNC_INFER_REQUESTS) };
         IE_SET_METRIC_RETURN(SUPPORTED_METRICS, supportedMetrics);
@@ -270,6 +271,8 @@ InferenceEngine::Parameter Plugin::GetMetric(const std::string& name, const std:
         // TODO: fill actual device architecture based on DEVICE_ID passed to `options`
         std::string deviceArch = "TEMPLATE";
         IE_SET_METRIC_RETURN(DEVICE_ARCHITECTURE, deviceArch);
+    } else if (METRIC_KEY(IMPORT_EXPORT_SUPPORT) == name) {
+        IE_SET_METRIC_RETURN(IMPORT_EXPORT_SUPPORT, true);
     } else if (METRIC_KEY(RANGE_FOR_ASYNC_INFER_REQUESTS) == name) {
         // TODO: fill with actual values
         using uint = unsigned int;

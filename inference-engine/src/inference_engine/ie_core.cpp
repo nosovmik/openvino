@@ -176,7 +176,6 @@ class Core::Impl : public ICore {
                 _modelCacheDir = it->second;
                 _cacheManager = std::make_shared<FileStorageCacheManager>(_modelCacheDir);
 
-                // remove if plugin does support common IE Core key
                 config.erase(it);
             }
         }
@@ -204,7 +203,7 @@ class Core::Impl : public ICore {
             std::string xmlStr;
             std::getline(stream, xmlStr);
 
-            std::cerr << "Header " << std::endl;
+            std::cerr << "mnosov: Header " << std::endl;
             std::cerr << xmlStr << std::endl;
 
             pugi::xml_document document;
@@ -233,7 +232,7 @@ class Core::Impl : public ICore {
         }
     };
 
-    // Core settings for all devices
+    // Core settings (cache directory, etc)
     CoreConfig coreConfig;
 
     struct PluginDescriptor {
@@ -248,156 +247,77 @@ class Core::Impl : public ICore {
     std::map<std::string, PluginDescriptor> pluginRegistry;
     mutable std::mutex pluginsMutex;  // to lock parallel access to pluginRegistry and plugins
 
-    ExecutableNetwork LoadNetworkImpl(const std::string& modelPath, const std::string& deviceName,
-        const std::map<std::string, std::string>& config,
-        const RemoteContext::Ptr& context) {
-        THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED) << "mnosov: TBD";
-    }
-
-    ExecutableNetwork LoadNetworkImpl(const CNNNetwork& network, const std::string& deviceName,
-        const std::map<std::string, std::string>& config,
-        const RemoteContext::Ptr& context) {
-        //      NetworkCompilationContext context(network, compileConfig);
-        return DoLoadNetworkImpl(network, deviceName, config, context);
-    }
-
-    ExecutableNetwork DoLoadNetworkImpl(const CNNNetwork& network, const std::string& deviceName,
-        const std::map<std::string, std::string>& configMap,
-        const RemoteContext::Ptr& context) {
-        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::DoLoadNetworkImpl");
-
-        auto parsed = parseDeviceNameIntoConfig<std::string>(deviceName, configMap);
-        auto config = parsed._config;
-        std::string deviceFamily = parsed._deviceName; // MULTI:CPU -> MULTI, GPU.0 -> GPU, CPU -> CPU and so on
-
-        auto deviceSupportsImport = [&](ICore* core) -> bool {
-            OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::device_supports_import");
-            std::stringstream dummyStream;
-            bool supports = true;
-            try {
-                auto n = context ? core->ImportNetwork(dummyStream, context, config) :
-                    core->ImportNetwork(dummyStream, deviceName, config);
-                (void)n;
-            }
-            catch (const NetworkNotRead&) {
-                supports = true;
-            }
-            catch (const NotImplemented&) {
-                supports = false;
-            }
-            catch (const details::InferenceEngineException& ex) {
-                std::string message = ex.what();
-                supports = message.find("NOT IMPLEMENTED") == std::string::npos;
-#ifdef __APPLE__
-            }
-            catch (const std::exception& ex) {
-                std::string message = ex.what();
-                supports = message.find("NOT IMPLEMENTED") == std::string::npos;
-#endif
-            }
-
-            if (!supports) {
-                std::cerr << deviceName << " does not support import" << std::endl;
-            }
-
-            return supports;
-        };
-
-        bool cachingIsAvailable = false, networkIsImported = false;
-        std::string blobID, modelCacheDir = coreConfig.getModelCacheDir();
-
-        if (coreConfig.isModelCacheEnabled() && deviceSupportsImport(this)) {
-            OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::hashing");
-
-            // Note: the following information from remote context is taken into account:
-            // * device name (part of compileConfig under DEVICE_NAME key)
-
-            auto compileConfig = config;
-            std::map<std::string, Parameter> getMetricConfig;
-
-            // 0. remove DEVICE_ID key
-            auto deviceIt = compileConfig.find(CONFIG_KEY(DEVICE_ID));
-            if (deviceIt != compileConfig.end()) {
-                getMetricConfig[deviceIt->first] = deviceIt->second;
-                compileConfig.erase(deviceIt);
-            }
-
-            // 1. replace it with DEVICE_ARCHITECTURE value
-            std::vector<std::string> supportedMetricKeys =
-                GetCPPPluginByName(deviceFamily).GetMetric(METRIC_KEY(SUPPORTED_METRICS), getMetricConfig);
-            auto archIt = std::find(supportedMetricKeys.begin(), supportedMetricKeys.end(),
-                METRIC_KEY(DEVICE_ARCHITECTURE));
-            if (archIt != supportedMetricKeys.end()) {
-                auto value = GetCPPPluginByName(deviceFamily).GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), getMetricConfig);
-                compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = value.as<std::string>();
-            } else {
-                // WA: take device name at least if device does not support DEVICE_ARCHITECTURE metric
-                compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = deviceFamily;
-            }
-
-            NetworkCompilationContext context(network, compileConfig);
-            cachingIsAvailable = context.isCachingAvailable();
-
-            // auto-hashing
-            if (cachingIsAvailable)
-                blobID = context.computeHash();
+    bool DeviceSupportsImportExport(const InferencePlugin& plugin) const {
+        bool supported = coreConfig.isModelCacheEnabled();
+        if (supported) {
+            std::vector<std::string> supportedMetricKeys = plugin.GetMetric(METRIC_KEY(SUPPORTED_METRICS), {});
+            auto it = std::find(supportedMetricKeys.begin(), supportedMetricKeys.end(),
+                                METRIC_KEY(IMPORT_EXPORT_SUPPORT));
+            supported = (it != supportedMetricKeys.end()) &&
+                        plugin.GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), {});
         }
+        return supported;
+    }
 
-        std::cerr << (cachingIsAvailable ?
-            std::string("caching is available") :
-            std::string("caching is not available")) << " for " << deviceFamily << std::endl;
+    ExecutableNetwork LoadNetworkImpl(const CNNNetwork& network,
+                                      InferencePlugin& plugin,
+                                      const std::map<std::string, std::string>& config,
+                                      const RemoteContext::Ptr& context,
+                                      const std::string& blobID) {
+        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::LoadNetworkImpl");
+        ExecutableNetwork execNetwork;
+        execNetwork = context ? plugin.LoadNetwork(network, context, config) :
+                                plugin.LoadNetwork(network, config);
+        if (DeviceSupportsImportExport(plugin)) {
+            auto cacheManager = coreConfig.getCacheManager();
+            IE_ASSERT(cacheManager != nullptr);
+            try {
+                // need to export network for further import from "cache"
+                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Export");
+                cacheManager->writeCacheEntry(blobID, std::bind([&](std::ostream& networkStream) {
+                    networkStream << CompiledBlobHeader(GetInferenceEngineVersion()->buildNumber);
+                    execNetwork.Export(networkStream);
+                    std::cerr << "mnosov: Network is exported as " << blobID << std::endl;
+                }, _1));
+            } catch (const std::exception &) {
+                cacheManager->removeCacheEntry(blobID);
+            }
+        }
+        return execNetwork;
+    }
+
+    ExecutableNetwork LoadNetworkFromCache(const std::string& blobId,
+                                           InferencePlugin& plugin,
+                                           const std::map<std::string, std::string>& config,
+                                           const RemoteContext::Ptr& context,
+                                           bool& networkIsImported) {
+        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::LoadNetworkFromCache");
 
         ExecutableNetwork execNetwork;
 
         auto cacheManager = coreConfig.getCacheManager();
-        if (cachingIsAvailable) {
-            IE_ASSERT(cacheManager != nullptr);
-            try {
-                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::ImportNetwork");
-                std::cerr << "try to import from core to " << deviceFamily << "\n\n" << std::endl;
+        IE_ASSERT(cacheManager != nullptr);
+        try {
+            OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetworkFromCache::ImportNetwork");
+            std::cerr << "mnosov: try to import from core " << blobId << std::endl;
 
-                cacheManager->readCacheEntry(blobID, std::bind([&](std::istream& networkStream) {
-                    CompiledBlobHeader header;
-                    networkStream >> header;
+            cacheManager->readCacheEntry(blobId, std::bind([&](std::istream& networkStream) {
+                CompiledBlobHeader header;
+                networkStream >> header;
 
-                    if (header.getIeVersion() != GetInferenceEngineVersion()->buildNumber) {
-                        // network cannot be read
-                        throw NetworkNotRead("Version does not match");
-                    }
-
-                    execNetwork = context ?
-                        ImportNetwork(networkStream, context, config) :
-                        ImportNetwork(networkStream, deviceFamily, config);
-                    networkIsImported = true;
-                }, _1));
-            }
-            catch (const std::exception&) {
-                cacheManager->removeCacheEntry(blobID); // mnosov: TODO also try/catch?
-            }
-        }
-
-        if (!networkIsImported) {
-            {
-                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::LoadNetwork");
-                // to limit plugin scope
-                auto plugin = GetCPPPluginByName(deviceFamily);
-                execNetwork = context ? plugin.LoadNetwork(network, context, config) :
-                                        plugin.LoadNetwork(network, config);
-            }
-
-            if (cachingIsAvailable) {
-                try {
-                    // need to export network for further import from "cache"
-                    OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Export");
-                    cacheManager->writeCacheEntry(blobID, std::bind([&](std::ostream& networkStream) {
-                        networkStream << CompiledBlobHeader(GetInferenceEngineVersion()->buildNumber);
-                        execNetwork.Export(networkStream);
-                    }, _1));
+                if (header.getIeVersion() != GetInferenceEngineVersion()->buildNumber) {
+                    // network cannot be read
+                    throw NetworkNotRead("Version does not match");
                 }
-                catch (const std::exception&) {
-                    cacheManager->removeCacheEntry(blobID); // mnosov: TODO also try/catch?
-                }
-            }
+
+                execNetwork = context ?
+                    plugin.ImportNetwork(networkStream, context, config) :
+                    plugin.ImportNetwork(networkStream, config);
+                networkIsImported = true;
+            }, _1));
+        } catch (const std::exception&) {
+            cacheManager->removeCacheEntry(blobId);
+            networkIsImported = false;
         }
 
         return execNetwork;
@@ -506,18 +426,101 @@ public:
             THROW_IE_EXCEPTION << "Remote context is nullptr";
         }
 
-        return LoadNetworkImpl(network, context->getDeviceName(), config, context);
+        auto parsed = parseDeviceNameIntoConfig(context->getDeviceName(), config);
+        auto plugin = GetCPPPluginByName(parsed._deviceName);
+        bool loadedFromCache = false;
+        ExecutableNetwork res;
+        std::string hash;
+        if (DeviceSupportsImportExport(plugin)) {
+            hash = CalculateNetworkHash(network, parsed._deviceName, plugin, config);
+            try {
+                res = LoadNetworkFromCache(hash, plugin, parsed._config, context, loadedFromCache);
+            } catch (const std::exception &) {
+            }
+        }
+
+        if (!loadedFromCache) {
+            res = LoadNetworkImpl(network, plugin, config, context, hash);
+        }
+        return res;
+    }
+
+    std::string CalculateNetworkHash(const CNNNetwork& network, const std::string& deviceFamily,
+                                     const InferencePlugin& plugin,
+                                     const std::map<std::string, std::string>& config) const {
+
+        // TODO: mnosov: review it
+        auto compileConfig = config;
+        std::map<std::string, Parameter> getMetricConfig;
+
+        // 0. remove DEVICE_ID key
+        auto deviceIt = compileConfig.find(CONFIG_KEY(DEVICE_ID));
+        if (deviceIt != compileConfig.end()) {
+            getMetricConfig[deviceIt->first] = deviceIt->second;
+            compileConfig.erase(deviceIt);
+        }
+
+        // 1. replace it with DEVICE_ARCHITECTURE value
+        std::vector<std::string> supportedMetricKeys =
+            plugin.GetMetric(METRIC_KEY(SUPPORTED_METRICS), getMetricConfig);
+        auto archIt = std::find(supportedMetricKeys.begin(), supportedMetricKeys.end(),
+            METRIC_KEY(DEVICE_ARCHITECTURE));
+        if (archIt != supportedMetricKeys.end()) {
+            auto value = plugin.GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), getMetricConfig);
+            compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = value.as<std::string>();
+        } else {
+            // WA: take device name at least if device does not support DEVICE_ARCHITECTURE metric
+            compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = deviceFamily;
+        }
+
+        NetworkCompilationContext context(network, compileConfig);
+        return context.computeHash();
     }
 
     ExecutableNetwork LoadNetwork(const CNNNetwork& network, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) override {
-        return LoadNetworkImpl(network, deviceName, config, nullptr);
+
+        auto parsed = parseDeviceNameIntoConfig(deviceName, config);
+        auto plugin = GetCPPPluginByName(parsed._deviceName);
+        bool loadedFromCache = false;
+        ExecutableNetwork res;
+        std::string hash;
+        if (DeviceSupportsImportExport(plugin)) {
+            hash = CalculateNetworkHash(network, parsed._deviceName, plugin, config);
+            try {
+                res = LoadNetworkFromCache(hash, plugin, parsed._config, nullptr, loadedFromCache);
+            } catch (const std::exception &) {
+            }
+        }
+
+        if (!loadedFromCache) {
+            res = LoadNetworkImpl(network, plugin, config, nullptr, hash);
+        }
+        return res;
     }
 
-    // TODO: For MULTI plug-in this method can be added to ICore interface
+    // TODO: In future, for MULTI plug-in this method can be added to ICore interface
     ExecutableNetwork LoadNetwork(const std::string& modelPath, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) {
-        return LoadNetworkImpl(modelPath, deviceName, config, nullptr);
+        auto parsed = parseDeviceNameIntoConfig(deviceName, config);
+        auto plugin = GetCPPPluginByName(parsed._deviceName);
+        bool loadedFromCache = false;
+        ExecutableNetwork res;
+        std::string hash;
+        if (DeviceSupportsImportExport(plugin)) {
+            std::size_t val = std::hash<std::string>()(modelPath + parsed._deviceName);
+            hash = std::to_string(val);
+            try {
+                res = LoadNetworkFromCache(hash, plugin, parsed._config, nullptr, loadedFromCache);
+            } catch (const std::exception &) {
+            }
+        }
+
+        if (!loadedFromCache) {
+            auto cnnNetwork = ReadNetwork(modelPath, "");
+            res = LoadNetworkImpl(cnnNetwork, plugin, config, nullptr, hash);
+        }
+        return res;
     }
 
     ExecutableNetwork ImportNetwork(std::istream& networkModel, const std::string& deviceName,
