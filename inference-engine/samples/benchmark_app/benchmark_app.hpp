@@ -108,6 +108,9 @@ static const char layout_message[] = "Optional. Prompts how network layouts shou
 // @brief message for quantization bits
 static const char gna_qb_message[] = "Optional. Weight bits for quantization:  8 or 16 (default)";
 
+// @brief message for enabling caching
+static const char cache_dir_message[] = "Optional. Enables caching of loaded models to specified existing dir. Reshaping will also be disabled";
+
 /// @brief Define flag for showing help message <br>
 DEFINE_bool(h, false, help_message);
 
@@ -198,6 +201,9 @@ DEFINE_string(layout, "", layout_message);
 /// @brief Define flag for quantization bits (default 16)
 DEFINE_int32(qb, 16, gna_qb_message);
 
+/// @brief Define parameter for cache model dir <br>
+DEFINE_string(cache, "", cache_dir_message);
+
 /**
 * @brief This function show a help message
 */
@@ -237,4 +243,5 @@ static void showUsage() {
     std::cout << "    -load_config              " << load_config_message << std::endl;
 #endif
     std::cout << "    -qb                       " << gna_qb_message << std::endl;
+    std::cout << "    -cache \"<path>\"           " << cache_dir_message << std::endl;
 }

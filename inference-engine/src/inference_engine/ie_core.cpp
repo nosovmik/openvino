@@ -316,9 +316,11 @@ class Core::Impl : public ICore {
                 networkIsImported = true;
             }, _1));
         } catch (const std::exception&) {
+            std::cerr << "mnosov: exception try to import from core " << blobId << std::endl;
             cacheManager->removeCacheEntry(blobId);
             networkIsImported = false;
         }
+        std::cerr << "mnosov: end try to import from core " << blobId << std::endl;
 
         return execNetwork;
     }
@@ -448,7 +450,6 @@ public:
     std::string CalculateNetworkHash(const CNNNetwork& network, const std::string& deviceFamily,
                                      const InferencePlugin& plugin,
                                      const std::map<std::string, std::string>& config) const {
-
         // TODO: mnosov: review it
         auto compileConfig = config;
         std::map<std::string, Parameter> getMetricConfig;
@@ -479,7 +480,6 @@ public:
 
     ExecutableNetwork LoadNetwork(const CNNNetwork& network, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) override {
-
         auto parsed = parseDeviceNameIntoConfig(deviceName, config);
         auto plugin = GetCPPPluginByName(parsed._deviceName);
         bool loadedFromCache = false;

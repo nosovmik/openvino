@@ -14,6 +14,9 @@
 #include <vpu/utils/runtime_graph.hpp>
 #include <legacy/net_pass.h>
 #include <vpu/compile_env.hpp>
+#include <chrono>
+
+using namespace std::chrono;
 
 using namespace InferenceEngine;
 
@@ -37,7 +40,10 @@ ExecutableNetwork::ExecutableNetwork(
         defaultOutput(_config.pluginLogFilePath()));
 
     _executor = std::make_shared<MyriadExecutor>(_config.forceReset(), std::move(mvnc), _config.logLevel(), _log);
+    auto start = high_resolution_clock::now();
     _device = _executor->openDevice(devicePool, _config);
+    auto end = high_resolution_clock::now();
+    std::cout << "mnosov: MYRIAD: open device took " << duration_cast<milliseconds>(end - start).count() << "ms\n";
 
     const auto& compileConfig = config.compileConfig();
     const auto& revision = _device->revision();

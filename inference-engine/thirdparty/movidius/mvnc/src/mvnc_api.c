@@ -1973,7 +1973,7 @@ ncStatus_t ncGraphAllocate(struct ncDeviceHandle_t * deviceHandle,
 
     ncStatus_t rc = NC_OK;
     XLinkError_t xl_error = X_LINK_SUCCESS;
-    mvLog(MVLOG_INFO, "Starting Graph allocation sequence\n");
+    mvLog(MVLOG_ERROR, "Starting Graph allocation sequence\n");
 
 
 
@@ -2047,7 +2047,9 @@ ncStatus_t ncGraphAllocate(struct ncDeviceHandle_t * deviceHandle,
     // now sending whole graph with same header
     cmd.type = GRAPH_ALLOCATE_CMD;
 
+    mvLog(MVLOG_ERROR, "Try send command - allocate [%d]", sizeof(cmd));
     rc = trySendCommand(d->graph_monitor_stream_id, &cmd, sizeof(cmd));
+    mvLog(MVLOG_ERROR, "End send command - allocate [%d]", sizeof(cmd));
     if(rc != 0){
         mvLog(MVLOG_ERROR, "can't send graph allocation command");
         unlockAllInferences();
@@ -2059,7 +2061,7 @@ ncStatus_t ncGraphAllocate(struct ncDeviceHandle_t * deviceHandle,
         unlockAllInferences();
         return parseXLinkError(xl_error);
     }
-    mvLog(MVLOG_INFO, "Sent graph");
+    mvLog(MVLOG_ERROR, "Sent graph");
     streamPacketDesc_t * tensorDescIn = 0;
     streamPacketDesc_t * tensorDescOut = 0;
     streamPacketDesc_t * nstages = 0;
@@ -2083,6 +2085,7 @@ ncStatus_t ncGraphAllocate(struct ncDeviceHandle_t * deviceHandle,
         unlockAllInferences();
         return parseXLinkError(xl_error);
     }
+    mvLog(MVLOG_ERROR, "After all XLinkReadData data");
     // for now, support only count 1
     if(!tensorDescIn ||
         tensorDescIn->length % sizeof(struct tensorDescriptor_t) ||
@@ -2137,7 +2140,9 @@ ncStatus_t ncGraphAllocate(struct ncDeviceHandle_t * deviceHandle,
     ncMvNCIErrorCode_t allocation_error = MVNCI_SUCCESS;
     cmd.type = GRAPH_ALLOCATION_VERIFY_CMD;
 
+    mvLog(MVLOG_ERROR, "Try send command - start [%d]", sizeof(cmd));
     rc = trySendCommand(d->graph_monitor_stream_id, &cmd, sizeof(cmd));
+    mvLog(MVLOG_ERROR, "Try send command - end");
     if(rc != 0){
         mvLog(MVLOG_ERROR, "can't send graph verification command");
         unlockAllInferences();
@@ -2181,7 +2186,7 @@ ncStatus_t ncGraphAllocate(struct ncDeviceHandle_t * deviceHandle,
     d->graphs = g;
     g->state = NC_GRAPH_ALLOCATED;
     GLOBAL_UNLOCK();
-    mvLog(MVLOG_INFO, "Graph allocation completed successfully\n");
+    mvLog(MVLOG_ERROR, "Graph allocation completed successfully\n");
 
     return NC_OK;
 }

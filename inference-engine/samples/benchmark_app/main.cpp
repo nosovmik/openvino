@@ -307,7 +307,6 @@ int main(int argc, char *argv[]) {
         for (auto&& item : config) {
             ie.SetConfig(item.second, item.first);
         }
-        ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "cacheBenchmark"} });
         auto double_to_string = [] (const double number) {
             std::stringstream ss;
             ss << std::fixed << std::setprecision(2) << number;
@@ -322,7 +321,24 @@ int main(int argc, char *argv[]) {
         std::string topology_name = "";
         benchmark_app::InputsInfo app_inputs_info;
         std::string output_name;
-        if (!isNetworkCompiled) {
+        if (!FLAGS_cache.empty()) {
+            next_step();
+            slog::info << "Skipping the step for loading network by name" << slog::endl;
+            next_step();
+            slog::info << "Skipping the step for loading network by name" << slog::endl;
+            next_step();
+            slog::info << "Skipping the step for loading network by name" << slog::endl;
+            ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), FLAGS_cache} });
+            auto startTime = Time::now();
+            exeNetwork = ie.LoadNetwork(FLAGS_m, device_name);
+            auto duration_ms = double_to_string(get_total_ms_time(startTime));
+            slog::info << "Load network by name took " << duration_ms << " ms" << slog::endl;
+            if (statistics)
+                statistics->addParameters(StatisticsReport::Category::EXECUTION_RESULTS,
+                                          {
+                                                  {"load network by name time (ms)", duration_ms}
+                                          });
+        } else if (!isNetworkCompiled) {
             // ----------------- 4. Reading the Intermediate Representation network ----------------------------------------
             next_step();
 
