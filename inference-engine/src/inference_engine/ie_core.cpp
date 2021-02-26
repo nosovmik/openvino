@@ -325,6 +325,52 @@ class Core::Impl : public ICore {
         return execNetwork;
     }
 
+    std::map<std::string, std::string> CreateCompileConfig(const InferencePlugin& plugin,
+                                                           const std::string& deviceFamily,
+                                                           const std::map<std::string, std::string>& origConfig) const {
+        // TODO: mnosov: review it
+        std::map<std::string, Parameter> getMetricConfig;
+        auto compileConfig = origConfig;
+
+        // 0. remove DEVICE_ID key
+        auto deviceIt = compileConfig.find(CONFIG_KEY(DEVICE_ID));
+        if (deviceIt != compileConfig.end()) {
+            getMetricConfig[deviceIt->first] = deviceIt->second;
+            compileConfig.erase(deviceIt);
+        }
+
+        // 1. replace it with DEVICE_ARCHITECTURE value
+        std::vector<std::string> supportedMetricKeys =
+            plugin.GetMetric(METRIC_KEY(SUPPORTED_METRICS), getMetricConfig);
+        auto archIt = std::find(supportedMetricKeys.begin(), supportedMetricKeys.end(),
+            METRIC_KEY(DEVICE_ARCHITECTURE));
+        if (archIt != supportedMetricKeys.end()) {
+            auto value = plugin.GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), getMetricConfig);
+            compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = value.as<std::string>();
+        } else {
+            // WA: take device name at least if device does not support DEVICE_ARCHITECTURE metric
+            compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = deviceFamily;
+        }
+        return compileConfig;
+    }
+
+    std::string CalculateNetworkHash(const CNNNetwork& network, const std::string& deviceFamily,
+                                     const InferencePlugin& plugin,
+                                     const std::map<std::string, std::string>& config) const {
+        auto compileConfig = CreateCompileConfig(plugin, deviceFamily, config);
+        NetworkCompilationContext context(network, compileConfig);
+        return context.computeHash();
+    }
+
+    std::string CalculateFileHash(const std::string& modelName, const std::string& deviceFamily,
+                                  const InferencePlugin& plugin,
+                                  const std::map<std::string, std::string>& config) const {
+        auto compileConfig = CreateCompileConfig(plugin, deviceFamily, config);
+
+        NetworkCompilationContext context(modelName, compileConfig);
+        return context.computeHash();
+    }
+
 public:
     Impl() {
         opsetNames.insert("opset1");
@@ -434,7 +480,8 @@ public:
         ExecutableNetwork res;
         std::string hash;
         if (DeviceSupportsImportExport(plugin)) {
-            hash = CalculateNetworkHash(network, parsed._deviceName, plugin, config);
+            hash = CalculateNetworkHash(network, parsed._deviceName, plugin, parsed._config);
+            // TODO: discuss if we need to catch cache exceptions here
             try {
                 res = LoadNetworkFromCache(hash, plugin, parsed._config, context, loadedFromCache);
             } catch (const std::exception &) {
@@ -447,37 +494,6 @@ public:
         return res;
     }
 
-    std::string CalculateNetworkHash(const CNNNetwork& network, const std::string& deviceFamily,
-                                     const InferencePlugin& plugin,
-                                     const std::map<std::string, std::string>& config) const {
-        // TODO: mnosov: review it
-        auto compileConfig = config;
-        std::map<std::string, Parameter> getMetricConfig;
-
-        // 0. remove DEVICE_ID key
-        auto deviceIt = compileConfig.find(CONFIG_KEY(DEVICE_ID));
-        if (deviceIt != compileConfig.end()) {
-            getMetricConfig[deviceIt->first] = deviceIt->second;
-            compileConfig.erase(deviceIt);
-        }
-
-        // 1. replace it with DEVICE_ARCHITECTURE value
-        std::vector<std::string> supportedMetricKeys =
-            plugin.GetMetric(METRIC_KEY(SUPPORTED_METRICS), getMetricConfig);
-        auto archIt = std::find(supportedMetricKeys.begin(), supportedMetricKeys.end(),
-            METRIC_KEY(DEVICE_ARCHITECTURE));
-        if (archIt != supportedMetricKeys.end()) {
-            auto value = plugin.GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), getMetricConfig);
-            compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = value.as<std::string>();
-        } else {
-            // WA: take device name at least if device does not support DEVICE_ARCHITECTURE metric
-            compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = deviceFamily;
-        }
-
-        NetworkCompilationContext context(network, compileConfig);
-        return context.computeHash();
-    }
-
     ExecutableNetwork LoadNetwork(const CNNNetwork& network, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) override {
         auto parsed = parseDeviceNameIntoConfig(deviceName, config);
@@ -486,7 +502,8 @@ public:
         ExecutableNetwork res;
         std::string hash;
         if (DeviceSupportsImportExport(plugin)) {
-            hash = CalculateNetworkHash(network, parsed._deviceName, plugin, config);
+            hash = CalculateNetworkHash(network, parsed._deviceName, plugin, parsed._config);
+            // TODO: discuss if we need to catch cache exceptions here
             try {
                 res = LoadNetworkFromCache(hash, plugin, parsed._config, nullptr, loadedFromCache);
             } catch (const std::exception &) {
@@ -508,8 +525,8 @@ public:
         ExecutableNetwork res;
         std::string hash;
         if (DeviceSupportsImportExport(plugin)) {
-            std::size_t val = std::hash<std::string>()(modelPath + parsed._deviceName);
-            hash = std::to_string(val);
+            hash = CalculateFileHash(modelPath, parsed._deviceName, plugin, parsed._config);
+            // TODO: discuss if we need to catch cache exceptions here
             try {
                 res = LoadNetworkFromCache(hash, plugin, parsed._config, nullptr, loadedFromCache);
             } catch (const std::exception &) {

@@ -30,10 +30,12 @@ struct NetworkCompilationContext final {
         const std::map<std::string, std::string> & compileOptions = {}) :
             m_weights{},
             m_compileOptions{compileOptions},
+            m_modelName{network.getName()},
             m_inputsInfo{network.getInputsInfo()},
             m_outputsInfo{network.getOutputsInfo()} {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "NetworkCompilationContext::serialize_ir");
 
+        // TODO: mnosov: review this
         try {
             auto & icnnnet = static_cast<ICNNNetwork &>(network);
             auto & ngraphImpl = dynamic_cast<details::CNNNetworkNGraphImpl &>(icnnnet);
@@ -78,6 +80,11 @@ struct NetworkCompilationContext final {
         }
     }
 
+    explicit NetworkCompilationContext(const std::string& modelName, const std::map<std::string, std::string> & compileOptions):
+                m_compileOptions{compileOptions},
+                m_modelName{modelName} {
+    }
+
     bool isCachingAvailable() const {
         return m_cachingIsAvailable;
     }
@@ -87,7 +94,10 @@ struct NetworkCompilationContext final {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "NetworkCompilationContext::computeHash");
 
         size_t seed {};
-        seed = hash_combine(seed, m_xmlFile.str());
+        if (m_xmlFile.good()) {
+            seed = hash_combine(seed, m_xmlFile.str());
+        }
+        seed = hash_combine(seed, m_modelName);
 
         // compute hash on weights if any
         if (!m_weights.empty()) {
@@ -165,6 +175,7 @@ private:
 
     // compile options
     std::map<std::string, std::string> m_compileOptions;
+    std::string                        m_modelName;
 
     // runtime information
     std::string m_runtime_atrributes;

@@ -61,6 +61,7 @@ public:
     int m_importNetworkCount = 0;
     int m_importNetworkContextCount = 0;
     mutable int m_getMetricCount = 0;
+    mutable int m_getMetricDevArchCount = 0;
     int m_exportCount = 0;
     int m_getDefaultContextCount = 0;
     bool m_supportImportExport = true;
@@ -80,6 +81,7 @@ public:
         m_getMetricCount = 0;
         m_exportCount = 0;
         m_getDefaultContextCount = 0;
+        m_getMetricDevArchCount = 0;
     }
 
     ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network,
@@ -110,12 +112,24 @@ public:
     Parameter GetMetric(const std::string& name, const std::map<std::string, Parameter>& options) const override {
         if (METRIC_KEY(SUPPORTED_METRICS) == name) {
             std::vector<std::string> supportedMetrics = {
+                METRIC_KEY(DEVICE_ARCHITECTURE),
                 METRIC_KEY(IMPORT_EXPORT_SUPPORT)
             };
             return supportedMetrics;
         } else if (METRIC_KEY(IMPORT_EXPORT_SUPPORT) == name) {
             m_getMetricCount++;
             return m_supportImportExport;
+        } else if (METRIC_KEY(DEVICE_ARCHITECTURE) == name) {
+            if (options.count("DEVICE_ID")) {
+                m_getMetricDevArchCount++;
+                auto id = options.at("DEVICE_ID").as<std::string>();
+                if (std::stoi(id) < 10) {
+                    return "mock_first_architecture";
+                } else {
+                    return "mock_another_architecture";
+                }
+            }
+            return name;
         } else {
             THROW_IE_EXCEPTION << "Unsupported device metric: " << name;
         }
@@ -304,6 +318,60 @@ TEST_F(CachingTest, TestReadLoadContext) {
         EXPECT_EQ(m_plugin->m_loadNetworkContextCount, 0); // verify: 'load was not called' (optimization works)
         EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
         EXPECT_EQ(m_plugin->m_importNetworkContextCount, 1); // verify: 'import was called instead of load + export'
+    }
+}
+
+TEST_F(CachingTest, TestDeviceArchitecture) {
+    enableCacheConfig();
+    auto performLoadByName = [&] (const std::string& suffix) {
+        auto exeNet = ie.LoadNetwork(modelName, deviceName + "." + suffix);
+        (void)exeNet;
+    };
+
+    { // Step 1: read and load network without cache
+        performLoadByName("0"); // loading "mock.0" device
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+        EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 2: same load, but for device 1. Cache must be reused from Step 1
+        performLoadByName("1"); // loading "mock.1" device
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
+        EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 3: same load, but for device 50. It has different architecture (see CachingInferencePlugin::GetMetric), so cache will not be reused
+        performLoadByName("50"); // loading "mock.50" device
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+        EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 4: same load, but for device 51. It has different same architecture as #50, so cache will be reused
+        performLoadByName("51"); // loading "mock.51" device
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
+        EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
     }
 }
 
