@@ -25,6 +25,14 @@
 #include "ie_network_reader.hpp"
 #include "xml_parse_utils.h"
 
+#ifdef _WIN32
+#include <direct.h>
+#define makedir(dir) _mkdir(dir)
+#else  // _WIN32
+#include <unistd.h>
+#define makedir(dir) mkdir(dir, 0600)
+#endif  // _WIN32
+
 using namespace InferenceEngine::PluginConfigParams;
 using namespace std::placeholders;
 
@@ -161,28 +169,43 @@ class Core::Impl : public ICore {
     mutable std::map<std::string, InferencePlugin> plugins;
 
     class CoreConfig final {
-        std::string _modelCacheDir {};
-        std::shared_ptr<ICacheManager> _cacheManager;
-
     public:
+        struct CacheConfig {
+            std::string _modelCacheDir {};
+            std::shared_ptr<ICacheManager> _cacheManager;
+        };
         CoreConfig() = default;
 
         void setAndUpdate(std::map<std::string, std::string> & config) {
+            std::lock_guard<std::mutex> lock(_cacheConfigMutex);
             auto it = config.find(CONFIG_KEY(CACHE_DIR));
             if (it != config.end()) {
-                if (isModelCacheEnabled()) {
-                    THROW_IE_EXCEPTION << "CACHE_DIR change is not yet supported";
+                _cacheConfig._modelCacheDir = it->second;
+                if (!_cacheConfig._modelCacheDir.empty()) {
+                    _cacheConfig._cacheManager = std::make_shared<FileStorageCacheManager>(_cacheConfig._modelCacheDir);
+                } else {
+                    _cacheConfig._cacheManager = nullptr;
                 }
-                _modelCacheDir = it->second;
-                _cacheManager = std::make_shared<FileStorageCacheManager>(_modelCacheDir);
 
                 config.erase(it);
+                if (!_cacheConfig._modelCacheDir.empty()) {
+                    int err = makedir(_cacheConfig._modelCacheDir.c_str());
+                    if (err != 0 && errno != EEXIST) {
+                        THROW_IE_EXCEPTION << "Couldn't create cache directory! (err=" << strerror(errno) << ")";
+                    }
+                }
             }
         }
 
-        bool isModelCacheEnabled() const { return _cacheManager != nullptr; }
-        std::string getModelCacheDir() const { return _modelCacheDir; }
-        std::shared_ptr<ICacheManager> getCacheManager() const { return _cacheManager; }
+        // Creating thread-safe copy of config including shared_ptr to ICacheManager
+        CacheConfig getCacheConfig() const {
+            std::lock_guard<std::mutex> lock(_cacheConfigMutex);
+            return _cacheConfig;
+        }
+
+    private:
+        mutable std::mutex _cacheConfigMutex;
+        CacheConfig _cacheConfig;
     };
 
     class CompiledBlobHeader final {
@@ -248,14 +271,11 @@ class Core::Impl : public ICore {
     mutable std::mutex pluginsMutex;  // to lock parallel access to pluginRegistry and plugins
 
     bool DeviceSupportsImportExport(const InferencePlugin& plugin) const {
-        bool supported = coreConfig.isModelCacheEnabled();
-        if (supported) {
-            std::vector<std::string> supportedMetricKeys = plugin.GetMetric(METRIC_KEY(SUPPORTED_METRICS), {});
-            auto it = std::find(supportedMetricKeys.begin(), supportedMetricKeys.end(),
-                                METRIC_KEY(IMPORT_EXPORT_SUPPORT));
-            supported = (it != supportedMetricKeys.end()) &&
-                        plugin.GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), {});
-        }
+        std::vector<std::string> supportedMetricKeys = plugin.GetMetric(METRIC_KEY(SUPPORTED_METRICS), {});
+        auto it = std::find(supportedMetricKeys.begin(), supportedMetricKeys.end(),
+                            METRIC_KEY(IMPORT_EXPORT_SUPPORT));
+        bool supported = (it != supportedMetricKeys.end()) &&
+                    plugin.GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), {});
         return supported;
     }
 
@@ -268,9 +288,8 @@ class Core::Impl : public ICore {
         ExecutableNetwork execNetwork;
         execNetwork = context ? plugin.LoadNetwork(network, context, config) :
                                 plugin.LoadNetwork(network, config);
-        if (DeviceSupportsImportExport(plugin)) {
-            auto cacheManager = coreConfig.getCacheManager();
-            IE_ASSERT(cacheManager != nullptr);
+        auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
+        if (cacheManager && DeviceSupportsImportExport(plugin)) {
             try {
                 // need to export network for further import from "cache"
                 OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Export");
@@ -286,7 +305,8 @@ class Core::Impl : public ICore {
         return execNetwork;
     }
 
-    ExecutableNetwork LoadNetworkFromCache(const std::string& blobId,
+    ExecutableNetwork LoadNetworkFromCache(std::shared_ptr<ICacheManager> cacheManager,
+                                           const std::string& blobId,
                                            InferencePlugin& plugin,
                                            const std::map<std::string, std::string>& config,
                                            const RemoteContext::Ptr& context,
@@ -295,7 +315,6 @@ class Core::Impl : public ICore {
 
         ExecutableNetwork execNetwork;
 
-        auto cacheManager = coreConfig.getCacheManager();
         IE_ASSERT(cacheManager != nullptr);
         try {
             OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetworkFromCache::ImportNetwork");
@@ -479,11 +498,12 @@ public:
         bool loadedFromCache = false;
         ExecutableNetwork res;
         std::string hash;
-        if (DeviceSupportsImportExport(plugin)) {
+        auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
+        if (cacheManager && DeviceSupportsImportExport(plugin)) {
             hash = CalculateNetworkHash(network, parsed._deviceName, plugin, parsed._config);
             // TODO: discuss if we need to catch cache exceptions here
             try {
-                res = LoadNetworkFromCache(hash, plugin, parsed._config, context, loadedFromCache);
+                res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, context, loadedFromCache);
             } catch (const std::exception &) {
             }
         }
@@ -501,11 +521,12 @@ public:
         bool loadedFromCache = false;
         ExecutableNetwork res;
         std::string hash;
-        if (DeviceSupportsImportExport(plugin)) {
+        auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
+        if (cacheManager && DeviceSupportsImportExport(plugin)) {
             hash = CalculateNetworkHash(network, parsed._deviceName, plugin, parsed._config);
             // TODO: discuss if we need to catch cache exceptions here
             try {
-                res = LoadNetworkFromCache(hash, plugin, parsed._config, nullptr, loadedFromCache);
+                res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, nullptr, loadedFromCache);
             } catch (const std::exception &) {
             }
         }
@@ -524,11 +545,12 @@ public:
         bool loadedFromCache = false;
         ExecutableNetwork res;
         std::string hash;
-        if (DeviceSupportsImportExport(plugin)) {
+        auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
+        if (cacheManager && DeviceSupportsImportExport(plugin)) {
             hash = CalculateFileHash(modelPath, parsed._deviceName, plugin, parsed._config);
             // TODO: discuss if we need to catch cache exceptions here
             try {
-                res = LoadNetworkFromCache(hash, plugin, parsed._config, nullptr, loadedFromCache);
+                res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, nullptr, loadedFromCache);
             } catch (const std::exception &) {
             }
         }

@@ -65,6 +65,7 @@ public:
     int m_exportCount = 0;
     int m_getDefaultContextCount = 0;
     bool m_supportImportExport = true;
+    bool m_throwOnExport = false;
     RemoteContext::Ptr m_defContext;
 
     CachingInferencePlugin(const std::string& name):
@@ -82,6 +83,7 @@ public:
         m_exportCount = 0;
         m_getDefaultContextCount = 0;
         m_getMetricDevArchCount = 0;
+        m_throwOnExport = false;
     }
 
     ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network,
@@ -144,9 +146,27 @@ public:
 void DummyExecutableNetwork::ExportImpl(std::ostream& networkModel) {
     networkModel << "Export is called";
     m_plugin.m_exportCount++;
+    if (m_plugin.m_throwOnExport) {
+        THROW_IE_EXCEPTION << "Internal test error on export";
+    }
 }
 
 //------------------------------------------------------
+class MkDirGuard {
+    std::string m_dir;
+public:
+    MkDirGuard(const std::string &dir = std::string()): m_dir(dir) {
+        if (!m_dir.empty()) {
+            CommonTestUtils::makeDir(m_dir);
+        }
+    }
+    ~MkDirGuard() {
+        if (!m_dir.empty()) {
+            CommonTestUtils::removeFilesWithExt(m_dir, "blob");
+            CommonTestUtils::removeDir(m_dir);
+        }
+    }
+};
 
 class CachingTest : public ::testing::Test {
 public:
@@ -157,6 +177,7 @@ public:
     std::string weightsName = "Caching_test.bin";
     std::string deviceName = "mock";
     InferenceEngine::Core ie;
+    MkDirGuard m_dirCreator;
 
     std::string get_mock_engine_name() {
         std::string mockEngineName("mock_engine");
@@ -164,7 +185,7 @@ public:
     }
 
     void SetUp() override {
-        CommonTestUtils::makeDir("testCache");
+        m_dirCreator = MkDirGuard("testCache");
         m_plugin = std::make_shared<CachingInferencePlugin>(deviceName);
         std::string libraryName = get_mock_engine_name();
         sharedObjectLoader.reset(new SharedObjectLoader(libraryName.c_str()));
@@ -174,21 +195,35 @@ public:
         FuncTestUtils::TestModel::generateTestModel(modelName, weightsName);
 
         ie.RegisterPlugin(std::string("mock_engine") + IE_BUILD_POSTFIX, deviceName);
+        // TODO: workaround. Performs further load of plugin, otherwise UnregisterPlugin throws exception
+        ie.GetDefaultContext(deviceName);
+        m_plugin->resetCounters();
     }
 
     void TearDown() override {
-        m_plugin = nullptr;
+        ie.UnregisterPlugin(deviceName);
+
         CommonTestUtils::removeIRFiles(modelName, weightsName);
         // remove all cache entries
-        CommonTestUtils::removeFilesWithExt("testCache", "blob");
-        CommonTestUtils::removeDir("testCache");
+        m_dirCreator = MkDirGuard();
 
-        ie.UnregisterPlugin(deviceName);
+        m_plugin = nullptr;
     }
 
     void enableCacheConfig() {
         ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
     }
+
+    void performLoadByName() {
+        auto exeNet = ie.LoadNetwork(modelName, deviceName);
+        (void)exeNet;
+    };
+
+    void performReadAndLoad() {
+        auto cnnNetwork = ie.ReadNetwork(modelName);
+        auto exeNet = ie.LoadNetwork(cnnNetwork, deviceName);
+        (void)exeNet;
+    };
 
 private:
     template <class T>
@@ -200,11 +235,6 @@ private:
 
 TEST_F(CachingTest, TestReadLoad) {
     enableCacheConfig();
-    auto performReadAndLoad = [&] {
-        auto cnnNetwork = ie.ReadNetwork(modelName);
-        auto exeNet = ie.LoadNetwork(cnnNetwork, deviceName);
-        (void)exeNet;
-    };
 
     { // Step 1: read and load network without cache
         performReadAndLoad();
@@ -229,10 +259,6 @@ TEST_F(CachingTest, TestReadLoad) {
 
 TEST_F(CachingTest, TestLoadByName) {
     enableCacheConfig();
-    auto performLoadByName = [&] {
-        auto exeNet = ie.LoadNetwork(modelName, deviceName);
-        (void)exeNet;
-    };
 
     { // Step 1: read and load network without cache
         performLoadByName();
@@ -259,11 +285,6 @@ TEST_F(CachingTest, TestLoadByName_NoCacheSupported1) {
     enableCacheConfig();                     // Enable caching in global settings
     m_plugin->m_supportImportExport = false; // but it is not supported by plugin
 
-    auto performLoadByName = [&] {
-        auto exeNet = ie.LoadNetwork(modelName, deviceName);
-        (void)exeNet;
-    };
-
     { // read and load network without cache
         performLoadByName();
 
@@ -275,11 +296,6 @@ TEST_F(CachingTest, TestLoadByName_NoCacheSupported1) {
 }
 
 TEST_F(CachingTest, TestLoadByName_NoCacheEnabled) {
-    auto performLoadByName = [&] {
-        auto exeNet = ie.LoadNetwork(modelName, deviceName);
-        (void)exeNet;
-    };
-
     { // read and load network without cache
         performLoadByName();
 
@@ -292,7 +308,7 @@ TEST_F(CachingTest, TestLoadByName_NoCacheEnabled) {
 
 TEST_F(CachingTest, TestReadLoadContext) {
     enableCacheConfig();
-    auto performReadAndLoad = [&] {
+    auto performReadLoadContext = [&] {
         auto cnnNetwork = ie.ReadNetwork(modelName);
         auto context = ie.GetDefaultContext(deviceName);
         EXPECT_EQ(m_plugin->m_getDefaultContextCount, 1); // verify: 'getDefaultContext' is called
@@ -301,7 +317,7 @@ TEST_F(CachingTest, TestReadLoadContext) {
     };
 
     { // Step 1: read and load network without cache
-        performReadAndLoad();
+        performReadLoadContext();
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkContextCount, 1); // verify: 'load was called'
@@ -312,7 +328,7 @@ TEST_F(CachingTest, TestReadLoadContext) {
     m_plugin->resetCounters();
 
     { // Step 2: same load, but now cache must be available from Step 1
-        performReadAndLoad();
+        performReadLoadContext();
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkContextCount, 0); // verify: 'load was not called' (optimization works)
@@ -323,13 +339,13 @@ TEST_F(CachingTest, TestReadLoadContext) {
 
 TEST_F(CachingTest, TestDeviceArchitecture) {
     enableCacheConfig();
-    auto performLoadByName = [&] (const std::string& suffix) {
+    auto performLoadByNameArch = [&] (const std::string& suffix) {
         auto exeNet = ie.LoadNetwork(modelName, deviceName + "." + suffix);
         (void)exeNet;
     };
 
     { // Step 1: read and load network without cache
-        performLoadByName("0"); // loading "mock.0" device
+        performLoadByNameArch("0"); // loading "mock.0" device
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
@@ -341,7 +357,7 @@ TEST_F(CachingTest, TestDeviceArchitecture) {
     m_plugin->resetCounters();
 
     { // Step 2: same load, but for device 1. Cache must be reused from Step 1
-        performLoadByName("1"); // loading "mock.1" device
+        performLoadByNameArch("1"); // loading "mock.1" device
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
@@ -353,7 +369,7 @@ TEST_F(CachingTest, TestDeviceArchitecture) {
     m_plugin->resetCounters();
 
     { // Step 3: same load, but for device 50. It has different architecture (see CachingInferencePlugin::GetMetric), so cache will not be reused
-        performLoadByName("50"); // loading "mock.50" device
+        performLoadByNameArch("50"); // loading "mock.50" device
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
@@ -365,7 +381,7 @@ TEST_F(CachingTest, TestDeviceArchitecture) {
     m_plugin->resetCounters();
 
     { // Step 4: same load, but for device 51. It has different same architecture as #50, so cache will be reused
-        performLoadByName("51"); // loading "mock.51" device
+        performLoadByNameArch("51"); // loading "mock.51" device
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
@@ -375,3 +391,100 @@ TEST_F(CachingTest, TestDeviceArchitecture) {
     }
 }
 
+TEST_F(CachingTest, TestChangeCacheDir) {
+    // Dynamic change of cache dir is not supported
+    ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
+
+    { // Step 1: read and load network without cache
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    }
+
+    m_plugin->resetCounters();
+    ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache2"} });
+
+    { // Step 2: same load, and due to cache dir change - it shall load network once again without import
+        MkDirGuard guard("testCache2"); // remove dir after test
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    }
+
+}
+
+TEST_F(CachingTest, TestClearCacheDir) {
+    // Once enabled, disabling it not supported anymore
+    ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
+    ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), ""} });
+
+    for (int i = 0; i < 3; i++) { // read and load network, no caching
+        m_plugin->resetCounters();
+        performLoadByName();
+
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    }
+}
+
+TEST_F(CachingTest, TestChangeOtherConfig) {
+    // Once enabled, user can set other global configs
+    enableCacheConfig();
+    ie.SetConfig({ {"otherKey", "otherValue"} });
+    { // Step 1: read and load network without cache
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 2: same load, verify cache is available
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called'
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called'
+    }
+}
+
+TEST_F(CachingTest, ErrorHandling_throwOnExport) {
+    enableCacheConfig();
+    auto performLoadByName = [&] {
+        auto exeNet = ie.LoadNetwork(modelName, deviceName);
+        (void)exeNet;
+    };
+
+    { // Step 1: read and load network without cache
+        m_plugin->m_throwOnExport = true;
+        // TODO: discuss if it shall throw exception on 'export' failure?
+        performLoadByName(); // TODO: put EXPECT_THROW....
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 2: same load, and due to unsuccessful export - it shall load network once again without import
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    }
+}
