@@ -40,16 +40,46 @@ MockPlugin::LoadNetwork(const CNNNetwork &network,
     }
 }
 
-InferenceEngine::ExecutableNetworkInternal::Ptr
-MockPlugin::LoadExeNetworkImpl(const InferenceEngine::CNNNetwork& network,
+ExecutableNetwork
+MockPlugin::LoadNetwork(const CNNNetwork& network, const std::map<std::string, std::string>& config,
+                        RemoteContext::Ptr context) {
+    if (_target) {
+        return _target->LoadNetwork(network, config, context);
+    } else {
+        THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
+    }
+}
+
+ExecutableNetworkInternal::Ptr
+MockPlugin::LoadExeNetworkImpl(const CNNNetwork& network,
                                const std::map<std::string, std::string>& config) {
     return {};
 }
 
-InferenceEngine::ExecutableNetwork MockPlugin::ImportNetworkImpl(std::istream& networkModel,
-    const std::map<std::string, std::string>& config) {
+InferenceEngine::ExecutableNetwork
+MockPlugin::ImportNetworkImpl(std::istream& networkModel,
+                              const std::map<std::string, std::string>& config) {
     if (_target) {
         return _target->ImportNetwork(networkModel, config);
+    } else {
+        THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
+    }
+}
+
+InferenceEngine::ExecutableNetwork
+MockPlugin::ImportNetworkImpl(std::istream& networkModel,
+                              const InferenceEngine::RemoteContext::Ptr& context,
+                              const std::map<std::string, std::string>& config) {
+    if (_target) {
+        return _target->ImportNetwork(networkModel, context, config);
+    } else {
+        THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
+    }
+}
+
+InferenceEngine::RemoteContext::Ptr MockPlugin::GetDefaultContext(const InferenceEngine::ParamMap& params) {
+    if (_target) {
+        return _target->GetDefaultContext(params);
     } else {
         THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
     }

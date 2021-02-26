@@ -35,6 +35,15 @@ using namespace InferenceEngine::details;
 
 class CachingInferencePlugin;
 
+class MockRemoteContext : public RemoteContext {
+    std::string m_name;
+public:
+    MockRemoteContext(std::string name): m_name(std::move(name)) {}
+    std::string getDeviceName() const noexcept { return m_name; }
+    MOCK_METHOD2(CreateBlob, RemoteBlob::Ptr(const TensorDesc&, const ParamMap&));
+    MOCK_QUALIFIED_METHOD0(getParams, const, ParamMap());
+};
+
 class DummyExecutableNetwork : public ExecutableNetworkInternal {
     CachingInferencePlugin& m_plugin;
 public:
@@ -47,64 +56,80 @@ public:
 
 class CachingInferencePlugin : public InferenceEngine::InferencePluginInternal {
 public:
-    int m_loadNetworkCalled = 0;
-    int m_importNetworkCalled = 0;
-    mutable int m_getMetricCalled = 0;
-    int m_exportCalled = 0;
+    int m_loadNetworkCount = 0;
+    int m_loadNetworkContextCount = 0;
+    int m_importNetworkCount = 0;
+    int m_importNetworkContextCount = 0;
+    mutable int m_getMetricCount = 0;
+    int m_exportCount = 0;
+    int m_getDefaultContextCount = 0;
     bool m_supportImportExport = true;
+    RemoteContext::Ptr m_defContext;
 
-    void resetCounters() {
-        m_loadNetworkCalled = 0;
-        m_importNetworkCalled = 0;
-        m_getMetricCalled = 0;
-        m_exportCalled = 0;
+    CachingInferencePlugin(const std::string& name):
+        m_defContext(std::make_shared<MockRemoteContext>(name)) {
     }
 
     ~CachingInferencePlugin() override = default;
 
+    void resetCounters() {
+        m_loadNetworkCount = 0;
+        m_loadNetworkContextCount = 0;
+        m_importNetworkCount = 0;
+        m_importNetworkContextCount = 0;
+        m_getMetricCount = 0;
+        m_exportCount = 0;
+        m_getDefaultContextCount = 0;
+    }
+
     ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network,
         const std::map<std::string, std::string>& config) override {
-        m_loadNetworkCalled++;
+        m_loadNetworkCount++;
         return std::make_shared<DummyExecutableNetwork>(*this);
     }
 
     ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network, RemoteContext::Ptr context,
         const std::map<std::string, std::string>& config) override {
-        m_loadNetworkCalled++;
+        m_loadNetworkContextCount++;
         return std::make_shared<DummyExecutableNetwork>(*this);
     }
 
     ExecutableNetwork ImportNetworkImpl(std::istream& networkModel,
         const std::map<std::string, std::string>& config) override {
-        m_importNetworkCalled++;
+        m_importNetworkCount++;
         return ExecutableNetwork(std::make_shared<MockIExecutableNetwork>());
     }
 
     ExecutableNetwork ImportNetworkImpl(std::istream& networkModel,
         const RemoteContext::Ptr& context,
         const std::map<std::string, std::string>& config) override {
-        m_importNetworkCalled++;
+        m_importNetworkContextCount++;
         return ExecutableNetwork(std::make_shared<MockIExecutableNetwork>());
     }
 
-    Parameter GetMetric(const std::string& name, const std::map<std::string, InferenceEngine::Parameter>& options) const override {
+    Parameter GetMetric(const std::string& name, const std::map<std::string, Parameter>& options) const override {
         if (METRIC_KEY(SUPPORTED_METRICS) == name) {
             std::vector<std::string> supportedMetrics = {
                 METRIC_KEY(IMPORT_EXPORT_SUPPORT)
             };
             return supportedMetrics;
         } else if (METRIC_KEY(IMPORT_EXPORT_SUPPORT) == name) {
-            m_getMetricCalled++;
+            m_getMetricCount++;
             return m_supportImportExport;
         } else {
             THROW_IE_EXCEPTION << "Unsupported device metric: " << name;
         }
     }
+
+    RemoteContext::Ptr GetDefaultContext(const ParamMap& params) {
+        m_getDefaultContextCount++;
+        return m_defContext;
+    }
 };
 
 void DummyExecutableNetwork::ExportImpl(std::ostream& networkModel) {
     networkModel << "Export is called";
-    m_plugin.m_exportCalled++;
+    m_plugin.m_exportCount++;
 }
 
 //------------------------------------------------------
@@ -126,7 +151,7 @@ public:
 
     void SetUp() override {
         CommonTestUtils::makeDir("testCache");
-        m_plugin = std::make_shared<CachingInferencePlugin>();
+        m_plugin = std::make_shared<CachingInferencePlugin>(deviceName);
         std::string libraryName = get_mock_engine_name();
         sharedObjectLoader.reset(new SharedObjectLoader(libraryName.c_str()));
         injectProxyEngine = make_std_function<void(IInferencePlugin*)>("InjectProxyEngine");
@@ -159,7 +184,7 @@ private:
     }
 };
 
-TEST_F(CachingTest, Test1) {
+TEST_F(CachingTest, TestReadLoad) {
     enableCacheConfig();
     auto performReadAndLoad = [&] {
         auto cnnNetwork = ie.ReadNetwork(modelName);
@@ -170,10 +195,10 @@ TEST_F(CachingTest, Test1) {
     { // Step 1: read and load network without cache
         performReadAndLoad();
 
-        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCalled, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCalled, 0); // verify: 'import was not called'
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
     }
 
     m_plugin->resetCounters();
@@ -181,10 +206,10 @@ TEST_F(CachingTest, Test1) {
     { // Step 2: same load, but now cache must be available from Step 1
         performReadAndLoad();
 
-        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 0); // verify: 'load was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_exportCalled, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_importNetworkCalled, 1); // verify: 'import was called instead of load + export'
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
     }
 }
 
@@ -198,10 +223,10 @@ TEST_F(CachingTest, TestLoadByName) {
     { // Step 1: read and load network without cache
         performLoadByName();
 
-        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCalled, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCalled, 0); // verify: 'import was not called'
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
     }
 
     m_plugin->resetCounters();
@@ -209,10 +234,10 @@ TEST_F(CachingTest, TestLoadByName) {
     { // Step 2: same load, but now cache must be available from Step 1
         performLoadByName();
 
-        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 0); // verify: 'load was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_exportCalled, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_importNetworkCalled, 1); // verify: 'import was called instead of load + export'
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
     }
 }
 
@@ -228,10 +253,10 @@ TEST_F(CachingTest, TestLoadByName_NoCacheSupported1) {
     { // read and load network without cache
         performLoadByName();
 
-        EXPECT_GT(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCalled, 0); // verify: 'export was not called'
-        EXPECT_EQ(m_plugin->m_importNetworkCalled, 0); // verify: 'import was not called'
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
     }
 }
 
@@ -244,9 +269,41 @@ TEST_F(CachingTest, TestLoadByName_NoCacheEnabled) {
     { // read and load network without cache
         performLoadByName();
 
-        EXPECT_EQ(m_plugin->m_getMetricCalled, 0); // verify: 'getMetric was not called when global cache is disabled'
-        EXPECT_EQ(m_plugin->m_loadNetworkCalled, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCalled, 0); // verify: 'export was not called'
-        EXPECT_EQ(m_plugin->m_importNetworkCalled, 0); // verify: 'import was not called'
+        EXPECT_EQ(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was not called when global cache is disabled'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
     }
 }
+
+TEST_F(CachingTest, TestReadLoadContext) {
+    enableCacheConfig();
+    auto performReadAndLoad = [&] {
+        auto cnnNetwork = ie.ReadNetwork(modelName);
+        auto context = ie.GetDefaultContext(deviceName);
+        EXPECT_EQ(m_plugin->m_getDefaultContextCount, 1); // verify: 'getDefaultContext' is called
+        auto exeNet = ie.LoadNetwork(cnnNetwork, context);
+        (void)exeNet;
+    };
+
+    { // Step 1: read and load network without cache
+        performReadAndLoad();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkContextCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkContextCount, 0); // verify: 'import was not called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 2: same load, but now cache must be available from Step 1
+        performReadAndLoad();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkContextCount, 0); // verify: 'load was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
+        EXPECT_EQ(m_plugin->m_importNetworkContextCount, 1); // verify: 'import was called instead of load + export'
+    }
+}
+
