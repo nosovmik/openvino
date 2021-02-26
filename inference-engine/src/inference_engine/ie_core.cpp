@@ -8,6 +8,7 @@
 #include <vector>
 #include <istream>
 #include <mutex>
+#include <sys/stat.h>
 
 #include <ie_core.hpp>
 #include <multi-device/multi_device_config.hpp>
@@ -30,7 +31,7 @@
 #define makedir(dir) _mkdir(dir)
 #else  // _WIN32
 #include <unistd.h>
-#define makedir(dir) mkdir(dir, 0600)
+#define makedir(dir) mkdir(dir, 0755)
 #endif  // _WIN32
 
 using namespace InferenceEngine::PluginConfigParams;

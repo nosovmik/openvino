@@ -217,13 +217,13 @@ public:
     void performLoadByName() {
         auto exeNet = ie.LoadNetwork(modelName, deviceName);
         (void)exeNet;
-    };
+    }
 
     void performReadAndLoad() {
         auto cnnNetwork = ie.ReadNetwork(modelName);
         auto exeNet = ie.LoadNetwork(cnnNetwork, deviceName);
         (void)exeNet;
-    };
+    }
 
 private:
     template <class T>
@@ -416,7 +416,6 @@ TEST_F(CachingTest, TestChangeCacheDir) {
         EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
         EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
     }
-
 }
 
 TEST_F(CachingTest, TestClearCacheDir) {
