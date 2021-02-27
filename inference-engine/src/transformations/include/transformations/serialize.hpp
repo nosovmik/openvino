@@ -17,8 +17,6 @@ class TRANSFORMATIONS_API Serialize;
 }  // namespace pass
 }  // namespace ngraph
 
-class OstreamAdapter;
-
 /**
  * @ingroup ie_transformation_common_api
  * @brief Serialize transformation converts ngraph::Function into IR files
@@ -44,7 +42,7 @@ public:
 
 private:
     std::ostream * m_xmlFile;
-    std::shared_ptr<OstreamAdapter> m_binFile;
+    std::ostream *  m_binFile;
     const std::string m_xmlPath;
     const std::string m_binPath;
     const Version m_version;
