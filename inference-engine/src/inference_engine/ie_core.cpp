@@ -502,11 +502,7 @@ public:
         auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
         if (cacheManager && DeviceSupportsImportExport(plugin)) {
             hash = CalculateNetworkHash(network, parsed._deviceName, plugin, parsed._config);
-            // TODO: discuss if we need to catch cache exceptions here
-            try {
-                res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, context, loadedFromCache);
-            } catch (const std::exception &) {
-            }
+            res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, context, loadedFromCache);
         }
 
         if (!loadedFromCache) {
@@ -525,11 +521,7 @@ public:
         auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
         if (cacheManager && DeviceSupportsImportExport(plugin)) {
             hash = CalculateNetworkHash(network, parsed._deviceName, plugin, parsed._config);
-            // TODO: discuss if we need to catch cache exceptions here
-            try {
-                res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, nullptr, loadedFromCache);
-            } catch (const std::exception &) {
-            }
+            res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, nullptr, loadedFromCache);
         }
 
         if (!loadedFromCache) {
@@ -549,11 +541,7 @@ public:
         auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
         if (cacheManager && DeviceSupportsImportExport(plugin)) {
             hash = CalculateFileHash(modelPath, parsed._deviceName, plugin, parsed._config);
-            // TODO: discuss if we need to catch cache exceptions here
-            try {
-                res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, nullptr, loadedFromCache);
-            } catch (const std::exception &) {
-            }
+            res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, nullptr, loadedFromCache);
         }
 
         if (!loadedFromCache) {
