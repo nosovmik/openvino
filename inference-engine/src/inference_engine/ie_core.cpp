@@ -282,13 +282,13 @@ class Core::Impl : public ICore {
 
     ExecutableNetwork LoadNetworkImpl(const CNNNetwork& network,
                                       InferencePlugin& plugin,
-                                      const std::map<std::string, std::string>& config,
+                                      const std::map<std::string, std::string>& parsedConfig,
                                       const RemoteContext::Ptr& context,
                                       const std::string& blobID) {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::LoadNetworkImpl");
         ExecutableNetwork execNetwork;
-        execNetwork = context ? plugin.LoadNetwork(network, context, config) :
-                                plugin.LoadNetwork(network, config);
+        execNetwork = context ? plugin.LoadNetwork(network, context, parsedConfig) :
+                                plugin.LoadNetwork(network, parsedConfig);
         auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
         if (cacheManager && DeviceSupportsImportExport(plugin)) {
             try {
@@ -506,7 +506,7 @@ public:
         }
 
         if (!loadedFromCache) {
-            res = LoadNetworkImpl(network, plugin, config, context, hash);
+            res = LoadNetworkImpl(network, plugin, parsed._config, context, hash);
         }
         return res;
     }
@@ -525,7 +525,7 @@ public:
         }
 
         if (!loadedFromCache) {
-            res = LoadNetworkImpl(network, plugin, config, nullptr, hash);
+            res = LoadNetworkImpl(network, plugin, parsed._config, nullptr, hash);
         }
         return res;
     }
@@ -546,7 +546,7 @@ public:
 
         if (!loadedFromCache) {
             auto cnnNetwork = ReadNetwork(modelPath, "");
-            res = LoadNetworkImpl(cnnNetwork, plugin, config, nullptr, hash);
+            res = LoadNetworkImpl(cnnNetwork, plugin, parsed._config, nullptr, hash);
         }
         return res;
     }

@@ -2,31 +2,30 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <tuple>
-#include <algorithm>
+#include <atomic>
 #include <string>
 #include <vector>
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
-#include <legacy/details/ie_cnn_network_tools.h>
+#include "ie_plugin_ptr.hpp"
+#include "ngraph/function.hpp"
+#include "details/ie_so_loader.h"
+#include "ie_metric_helpers.hpp"
+#include "ie_iexecutable_network.hpp"
+
+#include "cpp_interfaces/impl/ie_executable_network_internal.hpp"
+#include "cpp_interfaces/impl/ie_plugin_internal.hpp"
 
 #include "common_test_utils/test_common.hpp"
 #include "common_test_utils/unicode_utils.hpp"
 #include "common_test_utils/file_utils.hpp"
+#include "common_test_utils/test_constants.hpp"
+
 #include "functional_test_utils/test_model/test_model.hpp"
 #include "functional_test_utils/network_utils.hpp"
 
-#include <ie_plugin_ptr.hpp>
-#include <common_test_utils/test_constants.hpp>
-#include "details/ie_so_loader.h"
-#include "ie_metric_helpers.hpp"
-
-
-#include "unit_test_utils/mocks/mock_engine/mock_plugin.hpp"
 #include "unit_test_utils/mocks/mock_iexecutable_network.hpp"
-#include "unit_test_utils/mocks/cpp_interfaces/impl/mock_inference_plugin_internal.hpp"
-#include <cpp_interfaces/impl/ie_executable_network_thread_safe_default.hpp>
-#include <atomic>
 
 using namespace std;
 using namespace InferenceEngine;
@@ -120,6 +119,19 @@ public:
         return ExecutableNetwork(std::make_shared<MockIExecutableNetwork>());
     }
 
+    QueryNetworkResult QueryNetwork(const CNNNetwork& network,
+                                    const std::map<std::string, std::string>& config) const {
+        QueryNetworkResult res;
+        auto function = network.getFunction();
+        EXPECT_TRUE(function != nullptr);
+
+        for (auto&& node : function->get_ops()) {
+            res.supportedLayersMap.emplace(node->get_friendly_name(), m_defContext->getDeviceName());
+        }
+
+        return res;
+    }
+
     Parameter GetMetric(const std::string& name, const std::map<std::string, Parameter>& options) const override {
         if (METRIC_KEY(SUPPORTED_METRICS) == name) {
             std::vector<std::string> supportedMetrics = {
@@ -129,6 +141,8 @@ public:
                 supportedMetrics.push_back(METRIC_KEY(DEVICE_ARCHITECTURE));
             }
             return supportedMetrics;
+        } else if (METRIC_KEY(SUPPORTED_CONFIG_KEYS) == name) {
+            return std::vector<std::string>();
         } else if (METRIC_KEY(IMPORT_EXPORT_SUPPORT) == name) {
             m_getMetricCount++;
             return m_supportImportExport;
@@ -502,10 +516,6 @@ TEST_F(CachingTest, TestChangeOtherConfig) {
 
 TEST_F(CachingTest, ErrorHandling_throwOnExport) {
     enableCacheConfig();
-    auto performLoadByName = [&] {
-        auto exeNet = ie.LoadNetwork(modelName, deviceName);
-        (void)exeNet;
-    };
 
     { // Step 1: read and load network without cache
         m_plugin->m_throwOnExport = true;
@@ -569,5 +579,31 @@ TEST_F(CachingTest, ErrorHandling_throwOnImport) {
         EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
         EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
         EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called here'
+    }
+}
+
+TEST_F(CachingTest, LoadHeteroWithCorrectConfig) {
+    enableCacheConfig();
+
+    // TODO: test also HETERO with 1 plugin but different architectures, e.g. "HETERO:mock.1,mock.51"
+    std::string heteroDevice = CommonTestUtils::DEVICE_HETERO + std::string(":mock.1,mock.2");
+    { // Step 1: read and load network without cache
+        ie.LoadNetwork(modelName, heteroDevice);
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 2: same load, expected import
+        ie.LoadNetwork(modelName, heteroDevice);
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called'
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called'
     }
 }

@@ -85,6 +85,16 @@ InferenceEngine::RemoteContext::Ptr MockPlugin::GetDefaultContext(const Inferenc
     }
 }
 
+InferenceEngine::QueryNetworkResult
+MockPlugin::QueryNetwork(const InferenceEngine::CNNNetwork& network,
+                         const std::map<std::string, std::string>& config) const {
+    if (_target) {
+        return _target->QueryNetwork(network, config);
+    } else {
+        THROW_IE_EXCEPTION_WITH_STATUS(NOT_IMPLEMENTED);
+    }
+}
+
 
 InferenceEngine::IInferencePlugin *__target = nullptr;
 

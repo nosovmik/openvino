@@ -415,6 +415,8 @@ HeteroExecutableNetwork::HeteroExecutableNetwork(const InferenceEngine::CNNNetwo
     }
     for (auto&& network : networks) {
         auto metaDevices = _heteroPlugin->GetDevicePlugins(network._device, _config);
+        // TODO: Need to use DEVICE_ARCHITECTURE device metric and load network per architecture
+        // This is because potentially loaded networks for myriad.1 and myriad.100 can be different
         network._network = _heteroPlugin->GetCore()->LoadNetwork(network._clonedNetwork,
             network._device, metaDevices[network._device]);
     }
