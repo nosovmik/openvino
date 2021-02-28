@@ -5,6 +5,7 @@
 #include <atomic>
 #include <string>
 #include <vector>
+#include <mutex>
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
@@ -63,6 +64,8 @@ public:
     mutable std::atomic_int m_getMetricDevArchCount = {0};
     std::atomic_int m_exportCount = {0};
     std::atomic_int m_getDefaultContextCount = {0};
+    std::mutex m_loadedDeviceIdsMutex;
+    std::set<std::string> m_loadedDeviceIds;
     bool m_supportImportExport = {true};
     bool m_supportDevArch = {true};
     bool m_throwOnExport = {false};
@@ -89,22 +92,29 @@ public:
     }
 
     ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network,
-        const std::map<std::string, std::string>& config) override {
+                                                      const std::map<std::string, std::string>& config) override {
         m_loadNetworkCount++;
+        auto it = config.find("DEVICE_ID");
+        if (it != config.end()) {
+            std::lock_guard<std::mutex> lock(m_loadedDeviceIdsMutex);
+            m_loadedDeviceIds.insert(it->second);
+        }
         return std::make_shared<DummyExecutableNetwork>(*this);
     }
 
     ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network, RemoteContext::Ptr context,
-        const std::map<std::string, std::string>& config) override {
+                                                      const std::map<std::string, std::string>& config) override {
         m_loadNetworkContextCount++;
-        if (m_throwOnImport) {
-            THROW_IE_EXCEPTION << "Internal test error on import";
+        auto it = config.find("DEVICE_ID");
+        if (it != config.end()) {
+            std::lock_guard<std::mutex> lock(m_loadedDeviceIdsMutex);
+            m_loadedDeviceIds.insert(it->second);
         }
         return std::make_shared<DummyExecutableNetwork>(*this);
     }
 
     ExecutableNetwork ImportNetworkImpl(std::istream& networkModel,
-        const std::map<std::string, std::string>& config) override {
+                                        const std::map<std::string, std::string>& config) override {
         m_importNetworkCount++;
         if (m_throwOnImport) {
             THROW_IE_EXCEPTION << "Internal test error on import";
@@ -113,14 +123,17 @@ public:
     }
 
     ExecutableNetwork ImportNetworkImpl(std::istream& networkModel,
-        const RemoteContext::Ptr& context,
-        const std::map<std::string, std::string>& config) override {
+                                        const RemoteContext::Ptr& context,
+                                        const std::map<std::string, std::string>& config) override {
         m_importNetworkContextCount++;
+        if (m_throwOnImport) {
+            THROW_IE_EXCEPTION << "Internal test error on import";
+        }
         return ExecutableNetwork(std::make_shared<MockIExecutableNetwork>());
     }
 
     QueryNetworkResult QueryNetwork(const CNNNetwork& network,
-                                    const std::map<std::string, std::string>& config) const {
+                                    const std::map<std::string, std::string>& config) const override {
         QueryNetworkResult res;
         auto function = network.getFunction();
         EXPECT_TRUE(function != nullptr);
@@ -374,6 +387,7 @@ TEST_F(CachingTest, TestDeviceArchitecture) {
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_TRUE(m_plugin->m_loadedDeviceIds.find("0") != m_plugin->m_loadedDeviceIds.end());
         EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
         EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
         EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
@@ -398,6 +412,7 @@ TEST_F(CachingTest, TestDeviceArchitecture) {
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
         EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_TRUE(m_plugin->m_loadedDeviceIds.find("50") != m_plugin->m_loadedDeviceIds.end());
         EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
         EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
         EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
@@ -561,7 +576,7 @@ TEST_F(CachingTest, ErrorHandling_throwOnImport) {
     // TODO: discuss expectations for steps 2 and 3
     { // Step 2: same load, import is unsuccessful
         m_plugin->m_throwOnImport = true;
-        m_plugin->m_throwOnExport = true; // and simluate unsuccessful export as well
+        m_plugin->m_throwOnExport = true; // and simulate unsuccessful export as well
         performLoadByName();
 
         EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
