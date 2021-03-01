@@ -76,13 +76,15 @@ const int gna_header_magic = is_little_endian() ?  0x4d414e47 : 0x474e414d;
 
 GNAPluginNS::HeaderLatest::ModelHeader GNAModelSerial::ReadHeader(std::istream &is) {
     is.exceptions(std::istream::failbit);
+    auto pos = is.tellg();
     is.seekg(0, is.end);
-    auto stream_len = is.tellg();
+    auto stream_len = is.tellg() - pos;
     if (stream_len == -1) {
         THROW_GNA_EXCEPTION << "Can't open file to import";
     }
-    is.seekg(0, is.beg);
+    is.seekg(pos, is.beg);
 
+    std::cerr << "mnosov: size is " << stream_len << ", pos = " << pos << "\n";
     HeaderLatest::ModelHeader header;
     header.version.major = 0u;
     header.version.minor = 0u;
@@ -102,7 +104,7 @@ GNAPluginNS::HeaderLatest::ModelHeader GNAModelSerial::ReadHeader(std::istream &
                            std::hex << std::setw(2) << static_cast<short>(header.gnam[3]);
     }
 
-    is.seekg(0, is.beg);
+    is.seekg(pos, is.beg);
     Header2dot1::ModelHeader tempHeader2dot1;
     switch (header.version.major) {
         case 2:

@@ -25,6 +25,7 @@ Parameter GNAPlugin::GetMetric(const std::string& name, const std::map<std::stri
         {METRIC_KEY(AVAILABLE_DEVICES), [this]() {return GetAvailableDevices();}},
         // TODO: provide more detailed device architecture like GNA1, GNA2 or GNA3
         {METRIC_KEY(DEVICE_ARCHITECTURE), [this]() {return std::string{"GNA"};}},
+        {METRIC_KEY(IMPORT_EXPORT_SUPPORT), [this]() {return true;}},
         {METRIC_KEY(SUPPORTED_CONFIG_KEYS), [this]() {return config.GetSupportedKeys();}},
         {METRIC_KEY(OPTIMAL_NUMBER_OF_INFER_REQUESTS), [this]() {
             uint32_t nireq = 1;
