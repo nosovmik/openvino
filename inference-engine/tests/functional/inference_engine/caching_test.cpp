@@ -530,36 +530,12 @@ TEST_F(CachingTest, TestChangeOtherConfig) {
 
 TEST_F(CachingTest, ErrorHandling_throwOnExport) {
     enableCacheConfig();
-
-    { // Step 1: read and load network without cache
-        m_plugin->m_throwOnExport = true;
-        // TODO: discuss if it shall throw exception on 'export' failure?
-        performLoadByName(); // TODO: put EXPECT_THROW....
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
-    }
-
-    m_plugin->resetCounters();
-
-    { // Step 2: same load, and due to unsuccessful export - it shall load network once again without import
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
-    }
+    m_plugin->m_throwOnExport = true;
+    EXPECT_ANY_THROW(performLoadByName());
 }
 
 TEST_F(CachingTest, ErrorHandling_throwOnImport) {
     enableCacheConfig();
-    auto performLoadByName = [&] {
-        auto exeNet = ie.LoadNetwork(modelName, deviceName);
-        (void)exeNet;
-    };
 
     { // Step 1: read and load network without cache
         performLoadByName();
@@ -572,16 +548,9 @@ TEST_F(CachingTest, ErrorHandling_throwOnImport) {
 
     m_plugin->resetCounters();
 
-    // TODO: discuss expectations for steps 2 and 3
     { // Step 2: same load, import is unsuccessful
         m_plugin->m_throwOnImport = true;
-        m_plugin->m_throwOnExport = true; // and simulate unsuccessful export as well
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called'
+        EXPECT_ANY_THROW(performLoadByName());
     }
 
     m_plugin->resetCounters();

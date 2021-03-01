@@ -297,10 +297,10 @@ class Core::Impl : public ICore {
                 cacheManager->writeCacheEntry(blobID, std::bind([&](std::ostream& networkStream) {
                     networkStream << CompiledBlobHeader(GetInferenceEngineVersion()->buildNumber);
                     execNetwork.Export(networkStream);
-                    std::cerr << "mnosov: Network is exported as " << blobID << std::endl;
                 }, _1));
-            } catch (const std::exception &) {
+            } catch (...) {
                 cacheManager->removeCacheEntry(blobID);
+                throw;
             }
         }
         return execNetwork;
@@ -315,32 +315,39 @@ class Core::Impl : public ICore {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::LoadNetworkFromCache");
 
         ExecutableNetwork execNetwork;
+        struct HeaderException {};
 
         IE_ASSERT(cacheManager != nullptr);
+        bool headerLoaded = false;
         try {
             OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetworkFromCache::ImportNetwork");
-            std::cerr << "mnosov: try to import from core " << blobId << std::endl;
 
-            cacheManager->readCacheEntry(blobId, std::bind([&](std::istream& networkStream) {
-                CompiledBlobHeader header;
-                networkStream >> header;
-
-                if (header.getIeVersion() != GetInferenceEngineVersion()->buildNumber) {
-                    // network cannot be read
-                    throw NetworkNotRead("Version does not match");
+            cacheManager->readCacheEntry(blobId, std::bind([&](std::istream &networkStream) {
+                try {
+                    CompiledBlobHeader header;
+                    networkStream >> header;
+                    if (header.getIeVersion() != GetInferenceEngineVersion()->buildNumber) {
+                        // network cannot be read
+                        throw NetworkNotRead("Version does not match");
+                    }
+                    headerLoaded = true;
+                } catch (...) {
+                    throw HeaderException();
                 }
 
                 execNetwork = context ?
-                    plugin.ImportNetwork(networkStream, context, config) :
-                    plugin.ImportNetwork(networkStream, config);
+                              plugin.ImportNetwork(networkStream, context, config) :
+                              plugin.ImportNetwork(networkStream, config);
                 networkIsImported = true;
             }, _1));
-        } catch (const std::exception&) {
-            std::cerr << "mnosov: exception try to import from core " << blobId << std::endl;
+        } catch (const HeaderException& ex) {
+            // For these exceptions just remove old cache and set that import didn't work
             cacheManager->removeCacheEntry(blobId);
             networkIsImported = false;
+        } catch (...) {
+            cacheManager->removeCacheEntry(blobId);
+            throw;
         }
-        std::cerr << "mnosov: end try to import from core " << blobId << std::endl;
 
         return execNetwork;
     }
@@ -348,7 +355,6 @@ class Core::Impl : public ICore {
     std::map<std::string, std::string> CreateCompileConfig(const InferencePlugin& plugin,
                                                            const std::string& deviceFamily,
                                                            const std::map<std::string, std::string>& origConfig) const {
-        // TODO: mnosov: review it
         std::map<std::string, Parameter> getMetricConfig;
         auto compileConfig = origConfig;
 
