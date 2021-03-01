@@ -463,7 +463,6 @@ TEST_F(CachingTest, TestNoDeviceArchitecture) {
 }
 
 TEST_F(CachingTest, TestChangeCacheDir) {
-    // Dynamic change of cache dir is not supported
     ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
 
     { // Step 1: read and load network without cache
@@ -621,4 +620,10 @@ TEST_F(CachingTest, LoadHeteroWithCorrectConfig) {
         EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
         EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called'
     }
+}
+
+TEST_F(CachingTest, TestChangeCacheDirFailure) {
+    std::string invalidPath = "?*./*qwe/someFile.tmpCache";
+    // Set dir to invalid path name
+    EXPECT_THROW(ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), invalidPath} }), InferenceEngineException);
 }
