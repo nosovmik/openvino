@@ -312,17 +312,14 @@ class Core::Impl : public ICore {
                                            const std::map<std::string, std::string>& config,
                                            const RemoteContext::Ptr& context,
                                            bool& networkIsImported) {
-        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::LoadNetworkFromCache");
-
         ExecutableNetwork execNetwork;
         struct HeaderException {};
 
         IE_ASSERT(cacheManager != nullptr);
         bool headerLoaded = false;
         try {
-            OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetworkFromCache::ImportNetwork");
-
             cacheManager->readCacheEntry(blobId, std::bind([&](std::istream &networkStream) {
+                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetworkFromCache::ReadStreamAndImport");
                 try {
                     CompiledBlobHeader header;
                     networkStream >> header;
@@ -348,7 +345,6 @@ class Core::Impl : public ICore {
             cacheManager->removeCacheEntry(blobId);
             throw;
         }
-
         return execNetwork;
     }
 
@@ -496,10 +492,10 @@ public:
 
     ExecutableNetwork LoadNetwork(const CNNNetwork& network, const RemoteContext::Ptr& context,
                                   const std::map<std::string, std::string>& config) override {
+        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::RemoteContext");
         if (context == nullptr) {
             THROW_IE_EXCEPTION << "Remote context is nullptr";
         }
-
         auto parsed = parseDeviceNameIntoConfig(context->getDeviceName(), config);
         auto plugin = GetCPPPluginByName(parsed._deviceName);
         bool loadedFromCache = false;
@@ -519,6 +515,7 @@ public:
 
     ExecutableNetwork LoadNetwork(const CNNNetwork& network, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) override {
+        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNN");
         auto parsed = parseDeviceNameIntoConfig(deviceName, config);
         auto plugin = GetCPPPluginByName(parsed._deviceName);
         bool loadedFromCache = false;
@@ -539,6 +536,7 @@ public:
     // TODO: In future, for MULTI plug-in this method can be added to ICore interface
     ExecutableNetwork LoadNetwork(const std::string& modelPath, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) {
+        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Path");
         auto parsed = parseDeviceNameIntoConfig(deviceName, config);
         auto plugin = GetCPPPluginByName(parsed._deviceName);
         bool loadedFromCache = false;
