@@ -25,7 +25,7 @@
 #include "file_utils.h"
 #include "ie_network_reader.hpp"
 #include "xml_parse_utils.h"
-
+#include <thread>
 #ifdef _WIN32
 #include <direct.h>
 #define makedir(dir) _mkdir(dir)
@@ -294,6 +294,8 @@ class Core::Impl : public ICore {
             try {
                 // need to export network for further import from "cache"
                 OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Export");
+                std::cerr << "mnosov: start export:[";
+                std::cerr << blobID << "]\n";
                 cacheManager->writeCacheEntry(blobID, std::bind([&](std::ostream& networkStream) {
                     networkStream << CompiledBlobHeader(GetInferenceEngineVersion()->buildNumber);
                     execNetwork.Export(networkStream);
@@ -384,7 +386,12 @@ class Core::Impl : public ICore {
                                      const InferencePlugin& plugin,
                                      const std::map<std::string, std::string>& config) const {
         auto compileConfig = CreateCompileConfig(plugin, deviceFamily, config);
-        NetworkCompilationContext context(network, compileConfig);
+        std::ostringstream sstr;
+        sstr << network.getName();
+        sstr << std::this_thread::get_id();
+        std::string modelName = sstr.str();
+        std::cerr << "mnosov: model name is [" << modelName << "]\n";
+        NetworkCompilationContext context(modelName, compileConfig);
         return context.computeHash();
     }
 
@@ -542,6 +549,7 @@ public:
     ExecutableNetwork DoLoadNetwork(const CNNNetwork& network, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNN");
+        std::cerr << "mnosov: start loading " << network.getName() << "\n";
         auto parsed = parseDeviceNameIntoConfig(deviceName, config);
         auto plugin = GetCPPPluginByName(parsed._deviceName);
         bool loadedFromCache = false;
