@@ -30,13 +30,12 @@ struct NetworkCompilationContext final {
         const std::map<std::string, std::string> & compileOptions = {}) :
             m_weights{},
             m_compileOptions{compileOptions},
-            m_modelName{network.getName()},
             m_inputsInfo{network.getInputsInfo()},
             m_outputsInfo{network.getOutputsInfo()} {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "NetworkCompilationContext::serialize_ir");
 
         // TODO: mnosov: review this
-        try {
+/*        try {
             auto & icnnnet = static_cast<ICNNNetwork &>(network);
             auto & ngraphImpl = dynamic_cast<details::CNNNetworkNGraphImpl &>(icnnnet);
 
@@ -56,26 +55,30 @@ struct NetworkCompilationContext final {
 
         if (!m_cachingIsAvailable)
             return;
+*/
 
-        // put "affinity", "PrimitivesPriority" runtime information
+        if (network.getFunction()) {
+            // put "affinity", "PrimitivesPriority" runtime information
 
-        for (const auto & op : network.getFunction()->get_ordered_ops()) {
-            ngraph::Node::RTMap rt = op->get_rt_info();
+            for (const auto &op : network.getFunction()->get_ordered_ops()) {
+                ngraph::Node::RTMap rt = op->get_rt_info();
 
-            auto affinity_it = rt.find("affinity");
-            if (rt.end() != affinity_it) {
-                auto affinity = std::dynamic_pointer_cast<ngraph::VariantWrapper<std::string>>(affinity_it->second);
-                m_runtime_atrributes += op->get_friendly_name() + "#" + affinity->get();
-            }
+                auto affinity_it = rt.find("affinity");
+                if (rt.end() != affinity_it) {
+                    auto affinity = std::dynamic_pointer_cast<ngraph::VariantWrapper<std::string>>(affinity_it->second);
+                    m_runtime_attributes += op->get_friendly_name() + "#" + affinity->get();
+                }
 
-            auto priorities_it = rt.find("PrimitivesPriority");
-            if (rt.end() != priorities_it) {
-                auto primPriority = std::dynamic_pointer_cast<ngraph::VariantWrapper<std::string>>(priorities_it->second);
-                m_runtime_atrributes += op->get_friendly_name() + "#" + primPriority->get();
-            }
+                auto priorities_it = rt.find("PrimitivesPriority");
+                if (rt.end() != priorities_it) {
+                    auto primPriority = std::dynamic_pointer_cast<ngraph::VariantWrapper<std::string>>(
+                            priorities_it->second);
+                    m_runtime_attributes += op->get_friendly_name() + "#" + primPriority->get();
+                }
 
-            if (const auto & c = std::dynamic_pointer_cast<ngraph::opset6::Constant>(op)) {
-                m_weights.push_back(c);
+                if (const auto &c = std::dynamic_pointer_cast<ngraph::opset6::Constant>(op)) {
+                    m_weights.push_back(c);
+                }
             }
         }
     }
@@ -119,7 +122,7 @@ struct NetworkCompilationContext final {
             seed = hash_combine(seed, kvp.first + kvp.second);
         }
 
-        seed = hash_combine(seed, m_runtime_atrributes);
+        seed = hash_combine(seed, m_runtime_attributes);
 
         for (const auto & input : m_inputsInfo) {
             InputInfo::Ptr info = input.second;
@@ -178,7 +181,7 @@ private:
     std::string                        m_modelName;
 
     // runtime information
-    std::string m_runtime_atrributes;
+    std::string m_runtime_attributes;
     InferenceEngine::InputsDataMap m_inputsInfo;
     InferenceEngine::OutputsDataMap m_outputsInfo;
 };
