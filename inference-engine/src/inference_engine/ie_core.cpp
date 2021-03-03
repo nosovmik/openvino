@@ -227,7 +227,7 @@ class Core::Impl : public ICore {
             std::string xmlStr;
             std::getline(stream, xmlStr);
 
-            std::cerr << "mnosov: Header " << std::endl;
+            std::cerr << "mnosov2: Header " << std::endl;
             std::cerr << xmlStr << std::endl;
 
             pugi::xml_document document;
@@ -294,7 +294,7 @@ class Core::Impl : public ICore {
             try {
                 // need to export network for further import from "cache"
                 OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Export");
-                std::cerr << "mnosov: start export:[";
+                std::cerr << "mnosov2: start export:[";
                 std::cerr << blobID << "]\n";
                 cacheManager->writeCacheEntry(blobID, std::bind([&](std::ostream& networkStream) {
                     networkStream << CompiledBlobHeader(GetInferenceEngineVersion()->buildNumber);
@@ -316,7 +316,8 @@ class Core::Impl : public ICore {
                                            bool& networkIsImported) {
         ExecutableNetwork execNetwork;
         struct HeaderException {};
-        std::cerr << "mnosov: LoadNetworkFromCache: " << blobId << "\n";
+        OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetworkFromCache::Start");
+        std::cerr << "mnosov2: LoadNetworkFromCache: " << blobId << "\n";
 
         IE_ASSERT(cacheManager != nullptr);
         bool headerLoaded = false;
@@ -335,19 +336,20 @@ class Core::Impl : public ICore {
                     throw HeaderException();
                 }
 
-                std::cerr << "mnosov: Try import: " << blobId << "\n";
+                std::cerr << "mnosov3: Try import: " << blobId << "\n";
                 execNetwork = context ?
                               plugin.ImportNetwork(networkStream, context, config) :
                               plugin.ImportNetwork(networkStream, config);
                 networkIsImported = true;
+                std::cerr << "mnosov3: import is done: " << blobId << "\n";
             }, _1));
         } catch (const HeaderException& ex) {
             // For these exceptions just remove old cache and set that import didn't work
-            std::cerr << "mnosov: Header exception: " << blobId << "\n";
+            std::cerr << "mnosov2: Header exception: " << blobId << "\n";
             cacheManager->removeCacheEntry(blobId);
             networkIsImported = false;
         } catch (...) {
-            std::cerr << "mnosov: Other import exception: " << blobId << "\n";
+            std::cerr << "mnosov2: Other import exception: " << blobId << "\n";
             cacheManager->removeCacheEntry(blobId);
             throw;
         }
@@ -390,7 +392,7 @@ class Core::Impl : public ICore {
         sstr << network.getName();
         sstr << std::this_thread::get_id();
         std::string modelName = sstr.str();
-        std::cerr << "mnosov: model name is [" << modelName << "]\n";
+        std::cerr << "mnosov2: model name is [" << modelName << "]\n";
         NetworkCompilationContext context(modelName, compileConfig);
         return context.computeHash();
     }
@@ -529,19 +531,21 @@ public:
         ExecutableNetwork res;
         static int attempt = 0;
         try {
+            attempt++;
+            std::cerr << "mnosov4: att = " << attempt;
             if (attempt % 3 == 0) {
-                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNN0");
+                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNNa");
                 return DoLoadNetwork(network, deviceName, config);
             } else if (attempt % 3 == 1) {
-                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNN1");
+                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNNb");
                 return DoLoadNetwork(network, deviceName, config);
             } else if (attempt % 3 == 2) {
-                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNN2");
+                OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNNc");
                 return DoLoadNetwork(network, deviceName, config);
             }
             attempt++;
         } catch (...) {
-            std::cerr << "mnosov: loadNetwork failed" << attempt << "\n";
+            std::cerr << "mnosov2: loadNetwork failed" << attempt << "\n";
             throw;
         }
         return res;
@@ -549,7 +553,7 @@ public:
     ExecutableNetwork DoLoadNetwork(const CNNNetwork& network, const std::string& deviceName,
                                   const std::map<std::string, std::string>& config) {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::CNN");
-        std::cerr << "mnosov: start loading " << network.getName() << "\n";
+        std::cerr << "mnosov2: start loading " << network.getName() << "\n";
         auto parsed = parseDeviceNameIntoConfig(deviceName, config);
         auto plugin = GetCPPPluginByName(parsed._deviceName);
         bool loadedFromCache = false;
