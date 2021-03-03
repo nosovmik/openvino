@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2020 Intel Corporation
+// Copyright (C) 2018-2021 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <istream>
 #include <mutex>
 #include <sys/stat.h>
 
@@ -209,53 +208,6 @@ class Core::Impl : public ICore {
         CacheConfig _cacheConfig;
     };
 
-    class CompiledBlobHeader final {
-        std::string _ie_version;
-
-    public:
-        CompiledBlobHeader() = default;
-
-        explicit CompiledBlobHeader(const std::string & ie_version) :
-            _ie_version(ie_version) {
-        }
-
-        const std::string & getIeVersion() const {
-            return _ie_version;
-        }
-
-        friend std::istream & operator >> (std::istream & stream, CompiledBlobHeader & header) {
-            std::string xmlStr;
-            std::getline(stream, xmlStr);
-
-            std::cerr << "mnosov: Header " << std::endl;
-            std::cerr << xmlStr << std::endl;
-
-            pugi::xml_document document;
-            pugi::xml_parse_result res = document.load_string(xmlStr.c_str());
-
-            if (res.status != pugi::status_ok) {
-                THROW_IE_EXCEPTION_WITH_STATUS(NETWORK_NOT_READ) << "Error reading compiled blob header";
-            }
-
-            pugi::xml_node compiledBlobNode = document.document_element();
-            header._ie_version = XMLParseUtils::GetStrAttr(compiledBlobNode, "ie_version");
-
-            return stream;
-        }
-
-        friend std::ostream & operator << (std::ostream & stream, const CompiledBlobHeader & header) {
-            pugi::xml_document document;
-            auto compiledBlobNode = document.append_child("compiled_blob");
-            compiledBlobNode.append_attribute("ie_version").set_value(header._ie_version.c_str());
-
-            document.save(stream, nullptr, pugi::format_raw);
-            document.reset();
-            stream << std::endl;
-
-            return stream;
-        }
-    };
-
     // Core settings (cache directory, etc)
     CoreConfig coreConfig;
 
@@ -284,7 +236,8 @@ class Core::Impl : public ICore {
                                       InferencePlugin& plugin,
                                       const std::map<std::string, std::string>& parsedConfig,
                                       const RemoteContext::Ptr& context,
-                                      const std::string& blobID) {
+                                      const std::string& blobID,
+                                      const std::string& modelPath = std::string()) {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::Impl::LoadNetworkImpl");
         ExecutableNetwork execNetwork;
         execNetwork = context ? plugin.LoadNetwork(network, context, parsedConfig) :
@@ -295,7 +248,8 @@ class Core::Impl : public ICore {
                 // need to export network for further import from "cache"
                 OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "Core::LoadNetwork::Export");
                 cacheManager->writeCacheEntry(blobID, std::bind([&](std::ostream& networkStream) {
-                    networkStream << CompiledBlobHeader(GetInferenceEngineVersion()->buildNumber);
+                    networkStream << CompiledBlobHeader(GetInferenceEngineVersion()->buildNumber,
+                                                        NetworkCompilationContext::calculateFileInfo(modelPath));
                     execNetwork.Export(networkStream);
                 }, _1));
             } catch (...) {
@@ -311,7 +265,8 @@ class Core::Impl : public ICore {
                                            InferencePlugin& plugin,
                                            const std::map<std::string, std::string>& config,
                                            const RemoteContext::Ptr& context,
-                                           bool& networkIsImported) {
+                                           bool& networkIsImported,
+                                           const std::string& modelPath = std::string()) {
         ExecutableNetwork execNetwork;
         struct HeaderException {};
 
@@ -326,6 +281,10 @@ class Core::Impl : public ICore {
                     if (header.getIeVersion() != GetInferenceEngineVersion()->buildNumber) {
                         // network cannot be read
                         throw NetworkNotRead("Version does not match");
+                    }
+                    if (header.getFileInfo() != NetworkCompilationContext::calculateFileInfo(modelPath)) {
+                        // network cannot be read
+                        throw NetworkNotRead("Original model file is changed");
                     }
                     headerLoaded = true;
                 } catch (...) {
@@ -545,12 +504,13 @@ public:
         auto cacheManager = coreConfig.getCacheConfig()._cacheManager;
         if (cacheManager && DeviceSupportsImportExport(plugin)) {
             hash = CalculateFileHash(modelPath, parsed._deviceName, plugin, parsed._config);
-            res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config, nullptr, loadedFromCache);
+            res = LoadNetworkFromCache(cacheManager, hash, plugin, parsed._config,
+                                       nullptr, loadedFromCache, modelPath);
         }
 
         if (!loadedFromCache) {
             auto cnnNetwork = ReadNetwork(modelPath, "");
-            res = LoadNetworkImpl(cnnNetwork, plugin, parsed._config, nullptr, hash);
+            res = LoadNetworkImpl(cnnNetwork, plugin, parsed._config, nullptr, hash, modelPath);
         }
         return res;
     }

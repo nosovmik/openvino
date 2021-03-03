@@ -1,33 +1,53 @@
-// Copyright (C) 2018-2020 Intel Corporation
+// Copyright (C) 2021 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
 #pragma once
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#ifndef WIN32
+#include <unistd.h>
+#endif
+
 #include <string>
 #include <vector>
-#include <cstdint>
 #include <map>
+#include <xml_parse_utils.h>
 
 #include "ie_itt.hpp"
-
+#include "cpp_interfaces/exception2status.hpp"
 #include "transformations/serialize.hpp"
 #include "cnn_network_ngraph_impl.hpp"
-
 #include "cpp/ie_cnn_network.h"
 #include "details/ie_exception.hpp"
 
+#include "ngraph/pass/pass.hpp"
 #include "ngraph/variant.hpp"
 #include "ngraph/function.hpp"
 #include "ngraph/opsets/opset6.hpp"
 
-#include "ie_parallel.hpp"
+#ifdef WIN32
+#define stat _stat
+#endif
 
 namespace InferenceEngine {
 
 struct NetworkCompilationContext final {
+    static std::string calculateFileInfo(const std::string& filePath) {
+        std::string res;
+        struct stat result;
+        size_t seed {};
+        seed = hash_combine(seed, filePath);
+        if (stat(filePath.c_str(), &result) == 0) {
+            seed = hash_combine(seed, result.st_mtime);
+            seed = hash_combine(seed, result.st_size);
+        }
+        return std::to_string(seed);
+    }
+
     explicit NetworkCompilationContext(CNNNetwork network,
-        const std::map<std::string, std::string> & compileOptions = {}) :
+                                       const std::map<std::string, std::string> & compileOptions = {}) :
             m_weights{},
             m_compileOptions{compileOptions},
             m_inputsInfo{network.getInputsInfo()},
@@ -35,7 +55,7 @@ struct NetworkCompilationContext final {
         OV_ITT_SCOPED_TASK(itt::domains::IE_LT, "NetworkCompilationContext::serialize_ir");
 
         // TODO: mnosov: review this
-/*        try {
+        try {
             auto & icnnnet = static_cast<ICNNNetwork &>(network);
             auto & ngraphImpl = dynamic_cast<details::CNNNetworkNGraphImpl &>(icnnnet);
 
@@ -55,7 +75,6 @@ struct NetworkCompilationContext final {
 
         if (!m_cachingIsAvailable)
             return;
-*/
 
         if (network.getFunction()) {
             // put "affinity", "PrimitivesPriority" runtime information
@@ -83,7 +102,8 @@ struct NetworkCompilationContext final {
         }
     }
 
-    explicit NetworkCompilationContext(const std::string& modelName, const std::map<std::string, std::string> & compileOptions):
+    explicit NetworkCompilationContext(const std::string& modelName,
+                                       const std::map<std::string, std::string>& compileOptions):
                 m_compileOptions{compileOptions},
                 m_modelName{modelName} {
     }
@@ -100,7 +120,9 @@ struct NetworkCompilationContext final {
         if (m_xmlFile.good()) {
             seed = hash_combine(seed, m_xmlFile.str());
         }
-        seed = hash_combine(seed, m_modelName);
+        if (!m_modelName.empty()) {
+            seed = hash_combine(seed, m_modelName);
+        }
 
         // compute hash on weights if any
         if (!m_weights.empty()) {
@@ -184,6 +206,61 @@ private:
     std::string m_runtime_attributes;
     InferenceEngine::InputsDataMap m_inputsInfo;
     InferenceEngine::OutputsDataMap m_outputsInfo;
+};
+
+class CompiledBlobHeader final {
+    std::string m_ieVersion;
+    std::string m_fileInfo;
+
+public:
+    CompiledBlobHeader() = default;
+
+    explicit CompiledBlobHeader(const std::string& ieVersion, const std::string& fileInfo) :
+            m_ieVersion(ieVersion),
+            m_fileInfo(fileInfo) {
+    }
+
+    const std::string& getIeVersion() const {
+        return m_ieVersion;
+    }
+
+    const std::string& getFileInfo() const {
+        return m_fileInfo;
+    }
+
+    friend std::istream & operator >> (std::istream & stream, CompiledBlobHeader & header) {
+        std::string xmlStr;
+        std::getline(stream, xmlStr);
+
+        std::cerr << "mnosov: Header " << std::endl;
+        std::cerr << xmlStr << std::endl;
+
+        pugi::xml_document document;
+        pugi::xml_parse_result res = document.load_string(xmlStr.c_str());
+
+        if (res.status != pugi::status_ok) {
+            THROW_IE_EXCEPTION_WITH_STATUS(NETWORK_NOT_READ) << "Error reading compiled blob header";
+        }
+
+        pugi::xml_node compiledBlobNode = document.document_element();
+        header.m_ieVersion = XMLParseUtils::GetStrAttr(compiledBlobNode, "ie_version");
+        header.m_fileInfo = XMLParseUtils::GetStrAttr(compiledBlobNode, "file_info");
+
+        return stream;
+    }
+
+    friend std::ostream & operator << (std::ostream & stream, const CompiledBlobHeader & header) {
+        pugi::xml_document document;
+        auto compiledBlobNode = document.append_child("compiled_blob");
+        compiledBlobNode.append_attribute("ie_version").set_value(header.m_ieVersion.c_str());
+        compiledBlobNode.append_attribute("file_info").set_value(header.m_fileInfo.c_str());
+
+        document.save(stream, nullptr, pugi::format_raw);
+        document.reset();
+        stream << std::endl;
+
+        return stream;
+    }
 };
 
 }  // namespace InferenceEngine

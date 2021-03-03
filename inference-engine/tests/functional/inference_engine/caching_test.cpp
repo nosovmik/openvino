@@ -1,4 +1,4 @@
-﻿// Copyright (C) 2019 Intel Corporation
+﻿// Copyright (C) 2021 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -562,6 +562,45 @@ TEST_F(CachingTest, ErrorHandling_throwOnImport) {
         EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
         EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
         EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called here'
+    }
+}
+
+TEST_F(CachingTest, ErrorHandling_fileModified) {
+    enableCacheConfig();
+
+    { // Step 1: read and load network without cache
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 2: same load, file is modified, cache shall be invalidated and re-created
+        {
+            std::fstream stream(modelName, std::fstream::in | std::fstream::out | std::fstream::app);
+            stream << " ";
+        }
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
+        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import from invalid cache was not called'
+    }
+
+    m_plugin->resetCounters();
+
+    { // Step 3: same load, cache should be ok now
+        performLoadByName();
+
+        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
+        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called'
+        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
+        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called'
     }
 }
 
