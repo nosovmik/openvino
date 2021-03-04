@@ -171,7 +171,6 @@ class Core::Impl : public ICore {
     class CoreConfig final {
     public:
         struct CacheConfig {
-            std::string _modelCacheDir {};
             std::shared_ptr<ICacheManager> _cacheManager;
         };
         CoreConfig() = default;
@@ -180,20 +179,18 @@ class Core::Impl : public ICore {
             std::lock_guard<std::mutex> lock(_cacheConfigMutex);
             auto it = config.find(CONFIG_KEY(CACHE_DIR));
             if (it != config.end()) {
-                _cacheConfig._modelCacheDir = it->second;
-                if (!_cacheConfig._modelCacheDir.empty()) {
-                    _cacheConfig._cacheManager = std::make_shared<FileStorageCacheManager>(_cacheConfig._modelCacheDir);
+                if (!it->second.empty()) {
+                    int err = makedir(it->second.c_str());
+                    if (err != 0 && errno != EEXIST) {
+                        THROW_IE_EXCEPTION << "Couldn't create cache directory ["
+                                           << it->second << "], err=" << strerror(errno) << ")";
+                    }
+                    _cacheConfig._cacheManager = std::make_shared<FileStorageCacheManager>(it->second);
                 } else {
                     _cacheConfig._cacheManager = nullptr;
                 }
 
                 config.erase(it);
-                if (!_cacheConfig._modelCacheDir.empty()) {
-                    int err = makedir(_cacheConfig._modelCacheDir.c_str());
-                    if (err != 0 && errno != EEXIST) {
-                        THROW_IE_EXCEPTION << "Couldn't create cache directory! (err=" << strerror(errno) << ")";
-                    }
-                }
             }
         }
 

@@ -5,7 +5,6 @@
 #include <atomic>
 #include <string>
 #include <vector>
-#include <mutex>
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
@@ -18,7 +17,6 @@
 #include "cpp_interfaces/impl/ie_executable_network_internal.hpp"
 #include "cpp_interfaces/impl/ie_plugin_internal.hpp"
 
-#include "common_test_utils/test_common.hpp"
 #include "common_test_utils/unicode_utils.hpp"
 #include "common_test_utils/file_utils.hpp"
 #include "common_test_utils/test_constants.hpp"
@@ -28,12 +26,27 @@
 
 #include "unit_test_utils/mocks/mock_iexecutable_network.hpp"
 
-using namespace std;
 using namespace InferenceEngine;
 using namespace ::testing;
 using namespace InferenceEngine::details;
+using namespace std::placeholders;
 
-class CachingInferencePlugin;
+enum class TestLoadType {
+    ECNN,
+    EContext,
+    EModelName
+};
+using TestParam = std::tuple<TestLoadType, std::string, bool>;
+
+static const std::vector<TestParam> loadVariants = {
+        { TestLoadType::ECNN, "ByCNNNetwork", false },
+        { TestLoadType::EContext, "ByRemoteContext", true },
+        { TestLoadType::EModelName, "ByModelName", false },
+};
+
+std::string getTestCaseName(const testing::TestParamInfo<TestParam> &obj) {
+    return std::get<1>(obj.param);
+}
 
 class MockRemoteContext : public RemoteContext {
     std::string m_name;
@@ -44,150 +57,37 @@ public:
     MOCK_QUALIFIED_METHOD0(getParams, const, ParamMap());
 };
 
-class DummyExecutableNetwork : public ExecutableNetworkInternal {
-    CachingInferencePlugin& m_plugin;
+class MockCachingInferencePlugin : public InferenceEngine::InferencePluginInternal {
 public:
-    DummyExecutableNetwork(CachingInferencePlugin& plugin) : m_plugin(plugin) {}
-    void ExportImpl(std::ostream& networkModel) override;
-    IInferRequest::Ptr CreateInferRequest() override {
-        return nullptr;
-    }
-};
+    MockCachingInferencePlugin() = default;
+    ~MockCachingInferencePlugin() = default;
 
-class CachingInferencePlugin : public InferenceEngine::InferencePluginInternal {
-public:
-    std::atomic_int m_loadNetworkCount = {0};
-    std::atomic_int m_loadNetworkContextCount = {0};
-    std::atomic_int m_importNetworkCount = {0};
-    std::atomic_int m_importNetworkContextCount = {0};
-    mutable std::atomic_int m_getMetricCount = {0};
-    mutable std::atomic_int m_getMetricDevArchCount = {0};
-    std::atomic_int m_exportCount = {0};
-    std::atomic_int m_getDefaultContextCount = {0};
-    std::mutex m_loadedDeviceIdsMutex;
-    std::set<std::string> m_loadedDeviceIds;
-    bool m_supportImportExport = {true};
-    bool m_supportDevArch = {true};
-    bool m_throwOnExport = {false};
-    bool m_throwOnImport = {false};
-    RemoteContext::Ptr m_defContext;
+    MOCK_METHOD2(LoadExeNetworkImpl, ExecutableNetworkInternal::Ptr(const CNNNetwork& network,
+                                                      const std::map<std::string, std::string>& config));
 
-    CachingInferencePlugin(const std::string& name):
-        m_defContext(std::make_shared<MockRemoteContext>(name)) {
-    }
+    MOCK_METHOD3(LoadExeNetworkImpl, ExecutableNetworkInternal::Ptr(const CNNNetwork& network, RemoteContext::Ptr context,
+                                                      const std::map<std::string, std::string>& config));
 
-    ~CachingInferencePlugin() override = default;
+    MOCK_METHOD2(ImportNetworkImpl, ExecutableNetwork(std::istream& networkModel,
+                                        const std::map<std::string, std::string>& config));
 
-    void resetCounters() {
-        m_loadNetworkCount = 0;
-        m_loadNetworkContextCount = 0;
-        m_importNetworkCount = 0;
-        m_importNetworkContextCount = 0;
-        m_getMetricCount = 0;
-        m_exportCount = 0;
-        m_getDefaultContextCount = 0;
-        m_getMetricDevArchCount = 0;
-        m_throwOnExport = false;
-        m_throwOnImport = false;
-    }
-
-    ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network,
-                                                      const std::map<std::string, std::string>& config) override {
-        m_loadNetworkCount++;
-        auto it = config.find("DEVICE_ID");
-        if (it != config.end()) {
-            std::lock_guard<std::mutex> lock(m_loadedDeviceIdsMutex);
-            m_loadedDeviceIds.insert(it->second);
-        }
-        return std::make_shared<DummyExecutableNetwork>(*this);
-    }
-
-    ExecutableNetworkInternal::Ptr LoadExeNetworkImpl(const CNNNetwork& network, RemoteContext::Ptr context,
-                                                      const std::map<std::string, std::string>& config) override {
-        m_loadNetworkContextCount++;
-        auto it = config.find("DEVICE_ID");
-        if (it != config.end()) {
-            std::lock_guard<std::mutex> lock(m_loadedDeviceIdsMutex);
-            m_loadedDeviceIds.insert(it->second);
-        }
-        return std::make_shared<DummyExecutableNetwork>(*this);
-    }
-
-    ExecutableNetwork ImportNetworkImpl(std::istream& networkModel,
-                                        const std::map<std::string, std::string>& config) override {
-        m_importNetworkCount++;
-        if (m_throwOnImport) {
-            THROW_IE_EXCEPTION << "Internal test error on import";
-        }
-        return ExecutableNetwork(std::make_shared<MockIExecutableNetwork>());
-    }
-
-    ExecutableNetwork ImportNetworkImpl(std::istream& networkModel,
+    MOCK_METHOD3(ImportNetworkImpl, ExecutableNetwork(std::istream& networkModel,
                                         const RemoteContext::Ptr& context,
-                                        const std::map<std::string, std::string>& config) override {
-        m_importNetworkContextCount++;
-        if (m_throwOnImport) {
-            THROW_IE_EXCEPTION << "Internal test error on import";
-        }
-        return ExecutableNetwork(std::make_shared<MockIExecutableNetwork>());
-    }
+                                        const std::map<std::string, std::string>& config));
 
-    QueryNetworkResult QueryNetwork(const CNNNetwork& network,
-                                    const std::map<std::string, std::string>& config) const override {
-        QueryNetworkResult res;
-        auto function = network.getFunction();
-        EXPECT_TRUE(function != nullptr);
+    MOCK_CONST_METHOD2(QueryNetwork, QueryNetworkResult(const CNNNetwork& network,
+                                    const std::map<std::string, std::string>& config));
 
-        for (auto&& node : function->get_ops()) {
-            res.supportedLayersMap.emplace(node->get_friendly_name(), m_defContext->getDeviceName());
-        }
-
-        return res;
-    }
-
-    Parameter GetMetric(const std::string& name, const std::map<std::string, Parameter>& options) const override {
-        if (METRIC_KEY(SUPPORTED_METRICS) == name) {
-            std::vector<std::string> supportedMetrics = {
-                METRIC_KEY(IMPORT_EXPORT_SUPPORT)
-            };
-            if (m_supportDevArch) {
-                supportedMetrics.push_back(METRIC_KEY(DEVICE_ARCHITECTURE));
-            }
-            return supportedMetrics;
-        } else if (METRIC_KEY(SUPPORTED_CONFIG_KEYS) == name) {
-            return std::vector<std::string>();
-        } else if (METRIC_KEY(IMPORT_EXPORT_SUPPORT) == name) {
-            m_getMetricCount++;
-            return m_supportImportExport;
-        } else if (METRIC_KEY(DEVICE_ARCHITECTURE) == name) {
-            if (options.count("DEVICE_ID")) {
-                m_getMetricDevArchCount++;
-                auto id = options.at("DEVICE_ID").as<std::string>();
-                if (std::stoi(id) < 10) {
-                    return "mock_first_architecture";
-                } else {
-                    return "mock_another_architecture";
-                }
-            }
-            return name;
-        } else {
-            THROW_IE_EXCEPTION << "Unsupported device metric: " << name;
-        }
-    }
-
-    RemoteContext::Ptr GetDefaultContext(const ParamMap& params) override {
-        m_getDefaultContextCount++;
-        return m_defContext;
-    }
+    MOCK_CONST_METHOD2(GetMetric, Parameter(const std::string& name, const std::map<std::string, Parameter>& options));
+    MOCK_METHOD1(GetDefaultContext, RemoteContext::Ptr(const ParamMap& params));
 };
 
-void DummyExecutableNetwork::ExportImpl(std::ostream& networkModel) {
-    networkModel << "Export is called";
-    m_plugin.m_exportCount++;
-    if (m_plugin.m_throwOnExport) {
-        THROW_IE_EXCEPTION << "Internal test error on export";
-    }
-}
+class MockExecutableNetwork : public ExecutableNetworkInternal {
+public:
+    MockExecutableNetwork() {}
+    MOCK_METHOD1(ExportImpl, void(std::ostream& networkModel));
+    MOCK_METHOD0(CreateInferRequest, IInferRequest::Ptr());
+};
 
 //------------------------------------------------------
 class MkDirGuard {
@@ -206,15 +106,16 @@ public:
     }
 };
 
-class CachingTest : public ::testing::Test {
+class CachingTest : public ::testing::TestWithParam<TestParam> {
 public:
-    unique_ptr<SharedObjectLoader> sharedObjectLoader;
+    std::unique_ptr<SharedObjectLoader> sharedObjectLoader;
     std::function<void(IInferencePlugin*)> injectProxyEngine;
-    std::shared_ptr<CachingInferencePlugin> m_plugin; // must be shared_ptr due to internal InferencePluginInternal logic
     std::string modelName = "Caching_test.xml";
     std::string weightsName = "Caching_test.bin";
     std::string deviceName = "mock";
-    InferenceEngine::Core ie;
+    std::string deviceToLoad = "mock";
+    std::shared_ptr<MockCachingInferencePlugin> mockPlugin;
+    std::shared_ptr<MockExecutableNetwork> net;
     MkDirGuard m_dirCreator;
 
     std::string get_mock_engine_name() {
@@ -223,44 +124,57 @@ public:
     }
 
     void SetUp() override {
+        mockPlugin = std::make_shared<MockCachingInferencePlugin>();
+        net = std::make_shared<MockExecutableNetwork>();
+        setupMock(*mockPlugin);
         m_dirCreator = MkDirGuard("testCache");
-        m_plugin = std::make_shared<CachingInferencePlugin>(deviceName);
         std::string libraryName = get_mock_engine_name();
         sharedObjectLoader.reset(new SharedObjectLoader(libraryName.c_str()));
         injectProxyEngine = make_std_function<void(IInferencePlugin*)>("InjectProxyEngine");
-        injectProxyEngine(m_plugin.get());
 
         FuncTestUtils::TestModel::generateTestModel(modelName, weightsName);
-
-        ie.RegisterPlugin(std::string("mock_engine") + IE_BUILD_POSTFIX, deviceName);
-        // TODO: workaround. Performs further load of plugin, otherwise UnregisterPlugin throws exception
-        ie.GetDefaultContext(deviceName);
-        m_plugin->resetCounters();
     }
 
     void TearDown() override {
-        ie.UnregisterPlugin(deviceName);
-
         CommonTestUtils::removeIRFiles(modelName, weightsName);
         // remove all cache entries
         m_dirCreator = MkDirGuard();
-
-        m_plugin = nullptr;
     }
 
-    void enableCacheConfig() {
-        ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
+    void testLoad(std::function<void(Core& ie)> func) {
+        Core ie;
+        injectProxyEngine(mockPlugin.get());
+        ie.RegisterPlugin(std::string("mock_engine") + IE_BUILD_POSTFIX, deviceName);
+        func(ie);
+        ie.UnregisterPlugin(deviceName);
     }
 
-    void performLoadByName() {
-        auto exeNet = ie.LoadNetwork(modelName, deviceName);
+    std::function<void(Core&)> getLoadFunction(TestLoadType type) const {
+        switch (type) {
+            case TestLoadType::ECNN:
+                return std::bind(&CachingTest::performReadAndLoad, this, _1);
+            case TestLoadType::EContext:
+                return std::bind(&CachingTest::performReadAndLoadWithContext, this, _1);
+            case TestLoadType::EModelName:
+                return std::bind(&CachingTest::performLoadByName, this, _1);
+        }
+        return nullptr;
+    }
+    void performLoadByName(Core &ie) const {
+        auto exeNet = ie.LoadNetwork(modelName, deviceToLoad);
         (void)exeNet;
     }
 
-    void performReadAndLoad() {
+    void performReadAndLoad(Core &ie) const {
         auto cnnNetwork = ie.ReadNetwork(modelName);
-        auto exeNet = ie.LoadNetwork(cnnNetwork, deviceName);
-        (void)exeNet;
+        auto exeNet = ie.LoadNetwork(cnnNetwork, deviceToLoad);
+    }
+
+    void performReadAndLoadWithContext(Core &ie) const {
+        auto cnnNetwork = ie.ReadNetwork(modelName);
+        EXPECT_CALL(*mockPlugin, GetDefaultContext(_)).Times(AnyNumber());
+        auto context = ie.GetDefaultContext(deviceToLoad);
+        ie.LoadNetwork(cnnNetwork, context);
     }
 
 private:
@@ -269,369 +183,493 @@ private:
         std::function <T> ptr(reinterpret_cast<T*>(sharedObjectLoader->get_symbol(functionName.c_str())));
         return ptr;
     }
+
+    void setupMock(MockCachingInferencePlugin& plugin) {
+        ON_CALL(plugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).
+                WillByDefault(Invoke([&](const std::string &, const std::map<std::string, Parameter> &) {
+            std::vector<std::string> res;
+            res.push_back(METRIC_KEY(IMPORT_EXPORT_SUPPORT));
+            res.push_back(METRIC_KEY(DEVICE_ARCHITECTURE));
+            return res;
+        }));
+        ON_CALL(plugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).
+                WillByDefault(Return(true));
+
+        ON_CALL(plugin, GetMetric(METRIC_KEY(SUPPORTED_CONFIG_KEYS), _)).
+                WillByDefault(Invoke([&](const std::string &, const std::map<std::string, Parameter> &) {
+            std::vector<std::string> res;
+            res.push_back("SomeConfig");
+            return res;
+        }));
+
+        ON_CALL(plugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).
+                WillByDefault(Return("mock"));
+
+        ON_CALL(plugin, ImportNetworkImpl(_, _, _)).
+                WillByDefault(Invoke([&](std::istream &, RemoteContext::Ptr,
+                                         const std::map<std::string, std::string> &) {
+            return ExecutableNetwork(std::make_shared<MockIExecutableNetwork>());
+        }));
+
+        ON_CALL(plugin, ImportNetworkImpl(_, _)).
+                WillByDefault(Invoke([&](std::istream &, const std::map<std::string, std::string> &) {
+            return ExecutableNetwork(std::make_shared<MockIExecutableNetwork>());
+        }));
+
+        ON_CALL(plugin, LoadExeNetworkImpl(_, _, _)).
+                WillByDefault(Invoke([&](const CNNNetwork &, RemoteContext::Ptr,
+                                         const std::map<std::string, std::string> &) {
+            return net;
+        }));
+
+        ON_CALL(plugin, LoadExeNetworkImpl(_, _)).
+                WillByDefault(Invoke([&](const CNNNetwork &,
+                                         const std::map<std::string, std::string> &) {
+            return net;
+        }));
+
+        ON_CALL(plugin, GetDefaultContext(_)).
+                WillByDefault(Invoke([&](const ParamMap &) {
+            return std::make_shared<MockRemoteContext>(deviceToLoad);
+        }));
+
+        ON_CALL(plugin, QueryNetwork(_, _)).
+                WillByDefault(Invoke([&](const CNNNetwork &network, const std::map<std::string, std::string>&) {
+            QueryNetworkResult res;
+            auto function = network.getFunction();
+            EXPECT_TRUE(function);
+
+            for (auto &&node : function->get_ops()) {
+                res.supportedLayersMap.emplace(node->get_friendly_name(), deviceName);
+            }
+            return res;
+        }));
+    }
 };
 
-TEST_F(CachingTest, TestReadLoad) {
-    enableCacheConfig();
-
-    { // Step 1: read and load network without cache
-        performReadAndLoad();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+TEST_P(CachingTest, TestLoadByName) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 
-    m_plugin->resetCounters();
-
-    { // Step 2: same load, but now cache must be available from Step 1
-        performReadAndLoad();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
-    }
-}
-
-TEST_F(CachingTest, TestLoadByName) {
-    enableCacheConfig();
-
-    { // Step 1: read and load network without cache
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
-    }
-
-    m_plugin->resetCounters();
-
-    { // Step 2: same load, but now cache must be available from Step 1
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestLoadByName_NoCacheSupported) {
-    enableCacheConfig();                     // Enable caching in global settings
-    m_plugin->m_supportImportExport = false; // but it is not supported by plugin
-
-    { // read and load network without cache
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+TEST_P(CachingTest, TestNoCacheEnabled) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(0);
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestLoadByName_NoCacheEnabled) {
-    { // read and load network without cache
-        performLoadByName();
-
-        EXPECT_EQ(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was not called when global cache is disabled'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+TEST_P(CachingTest, TestNoCacheSupported) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _))
+            .Times(AnyNumber()).WillRepeatedly(Return(false));
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestReadLoadContext) {
-    enableCacheConfig();
-    auto performReadLoadContext = [&] {
-        auto cnnNetwork = ie.ReadNetwork(modelName);
-        auto context = ie.GetDefaultContext(deviceName);
-        EXPECT_EQ(m_plugin->m_getDefaultContextCount, 1); // verify: 'getDefaultContext' is called
-        auto exeNet = ie.LoadNetwork(cnnNetwork, context);
-        (void)exeNet;
-    };
-
-    { // Step 1: read and load network without cache
-        performReadLoadContext();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkContextCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkContextCount, 0); // verify: 'import was not called'
-    }
-
-    m_plugin->resetCounters();
-
-    { // Step 2: same load, but now cache must be available from Step 1
-        performReadLoadContext();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkContextCount, 0); // verify: 'load was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_importNetworkContextCount, 1); // verify: 'import was called instead of load + export'
+TEST_P(CachingTest, TestNoCacheMetricSupported) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _))
+            .Times(AnyNumber()).WillRepeatedly(Return(std::vector<std::string>{}));
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(0);
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(0);
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestDeviceArchitecture) {
-    enableCacheConfig();
-    auto performLoadByNameArch = [&] (const std::string& suffix) {
-        auto exeNet = ie.LoadNetwork(modelName, deviceName + "." + suffix);
-        (void)exeNet;
-    };
-
-    { // Step 1: read and load network without cache
-        performLoadByNameArch("0"); // loading "mock.0" device
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_TRUE(m_plugin->m_loadedDeviceIds.find("0") != m_plugin->m_loadedDeviceIds.end());
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
-        EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
+TEST_P(CachingTest, TestLoadChangeCacheDir) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 
-    m_plugin->resetCounters();
-
-    { // Step 2: same load, but for device 1. Cache must be reused from Step 1
-        performLoadByNameArch("1"); // loading "mock.1" device
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
-        EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
-    }
-
-    m_plugin->resetCounters();
-
-    { // Step 3: same load, but for device 50. It has different architecture (see CachingInferencePlugin::GetMetric), so cache will not be reused
-        performLoadByNameArch("50"); // loading "mock.50" device
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_TRUE(m_plugin->m_loadedDeviceIds.find("50") != m_plugin->m_loadedDeviceIds.end());
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
-        EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
-    }
-
-    m_plugin->resetCounters();
-
-    { // Step 4: same load, but for device 51. It has different same architecture as #50, so cache will be reused
-        performLoadByNameArch("51"); // loading "mock.51" device
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
-        EXPECT_GT(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was called'
+    {
+        MkDirGuard("testCache2");
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache2"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestNoDeviceArchitecture) {
-    enableCacheConfig();
-    m_plugin->m_supportDevArch = false;
-    auto performLoadByNameArch = [&] (const std::string& suffix) {
-        auto exeNet = ie.LoadNetwork(modelName, deviceName + "." + suffix);
-        (void)exeNet;
-    };
-
-    { // Step 1: read and load network without cache
-        performLoadByNameArch("0"); // loading "mock.0" device
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
-        EXPECT_EQ(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was not called'
-    }
-
-    m_plugin->resetCounters();
-
-    { // Step 2: same load, but for device 50. Cache must be reused from Step 1 as arch is "mock" by default
-        performLoadByNameArch("50"); // loading "mock.50" device
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called' (optimization works)
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called instead of load + export'
-        EXPECT_EQ(m_plugin->m_getMetricDevArchCount, 0); // verify: 'getMetric for device architecture was not called'
+TEST_P(CachingTest, TestClearCacheDir) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(0);
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), ""}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestChangeCacheDir) {
-    ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
-
-    { // Step 1: read and load network without cache
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
-    }
-
-    m_plugin->resetCounters();
-    ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache2"} });
-
-    { // Step 2: same load, and due to cache dir change - it shall load network once again without import
-        MkDirGuard guard("testCache2"); // remove dir after test
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+TEST_P(CachingTest, TestChangeOtherConfig) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            ie.SetConfig({{"someKey", "someValue"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestClearCacheDir) {
-    // Once enabled, disabling it not supported anymore
-    ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), "testCache"} });
-    ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), ""} });
+TEST_P(CachingTest, TestChangeCacheDirFailure) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
+    }
 
-    for (int i = 0; i < 3; i++) { // read and load network, no caching
-        m_plugin->resetCounters();
-        performLoadByName();
-
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            EXPECT_ANY_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "?*. / *qwe/someFile.tmpCache"}}));
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestChangeOtherConfig) {
-    // Once enabled, user can set other global configs
-    enableCacheConfig();
-    ie.SetConfig({ {"otherKey", "otherValue"} });
-    { // Step 1: read and load network without cache
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+TEST_P(CachingTest, TestDeviceArchitecture) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber())
+            .WillRepeatedly(Invoke([&](const std::string&, const std::map<std::string, Parameter>& options) {
+                auto id = options.at("DEVICE_ID").as<std::string>();
+                if (std::stoi(id) < 10) {
+                    return "mock_first_architecture";
+                } else {
+                    return "mock_another_architecture";
+                }
+            }));
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            deviceToLoad = "mock.0";
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 
-    m_plugin->resetCounters();
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            deviceToLoad = "mock.1";
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
+    }
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            deviceToLoad = "mock.50";
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
+    }
 
-    { // Step 2: same load, verify cache is available
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called'
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called'
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            deviceToLoad = "mock.51";
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, ErrorHandling_throwOnExport) {
-    enableCacheConfig();
-    m_plugin->m_throwOnExport = true;
-    EXPECT_ANY_THROW(performLoadByName());
+TEST_P(CachingTest, TestNoDeviceArchitecture) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber())
+            .WillRepeatedly(Invoke([&] (const std::string&, const std::map<std::string, Parameter>&) {
+                return std::vector<std::string>{METRIC_KEY(IMPORT_EXPORT_SUPPORT)};
+            }));
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(0);
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            deviceToLoad = "mock.0";
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
+    }
+
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            deviceToLoad = "mock.50";
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
+    }
 }
 
-TEST_F(CachingTest, ErrorHandling_throwOnImport) {
-    enableCacheConfig();
-
-    { // Step 1: read and load network without cache
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+TEST_P(CachingTest, TestThrowOnExport) {
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1).WillOnce(Throw(1));
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            EXPECT_ANY_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
     }
+}
 
-    m_plugin->resetCounters();
+TEST_P(CachingTest, TestThrowOnImport) {
+    ON_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).WillByDefault(Throw(1));
+    ON_CALL(*mockPlugin, ImportNetworkImpl(_, _)).WillByDefault(Throw(1));
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+    bool useRemoteContext = std::get<2>(GetParam());
 
-    { // Step 2: same load, import is unsuccessful
-        m_plugin->m_throwOnImport = true;
-        EXPECT_ANY_THROW(performLoadByName());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
-
-    m_plugin->resetCounters();
-
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            EXPECT_ANY_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
+    }
     { // Step 3: same load, cache should be deleted due to unsuccessful import on step 2
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called here'
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            EXPECT_NO_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
     }
 }
 
-TEST_F(CachingTest, ErrorHandling_fileModified) {
-    enableCacheConfig();
+TEST_F(CachingTest, TestFileModified) {
+    // Test is only for loadByName
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
 
-    { // Step 1: read and load network without cache
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(1);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(TestLoadType::EModelName)(ie));
+        });
     }
-
-    m_plugin->resetCounters();
-
-    { // Step 2: same load, file is modified, cache shall be invalidated and re-created
-        {
-            std::fstream stream(modelName, std::fstream::in | std::fstream::out | std::fstream::app);
-            stream << " ";
-        }
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import from invalid cache was not called'
+    {
+        std::fstream stream(modelName, std::fstream::out | std::fstream::app);
+        stream << " ";
     }
-
-    m_plugin->resetCounters();
-
-    { // Step 3: same load, cache should be ok now
-        performLoadByName();
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called'
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called'
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(1);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(TestLoadType::EModelName)(ie));
+        });
+    }
+    { // Step 3: same load, should be ok now
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(1);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(TestLoadType::EModelName)(ie));
+        });
     }
 }
 
-TEST_F(CachingTest, LoadHeteroWithCorrectConfig) {
-    enableCacheConfig();
-
+TEST_P(CachingTest, LoadHeteroWithCorrectConfig) {
+    EXPECT_CALL(*mockPlugin, GetMetric(_, _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, QueryNetwork(_, _)).Times(AnyNumber());
     // TODO: test also HETERO with 1 plugin but different architectures, e.g. "HETERO:mock.1,mock.51"
-    std::string heteroDevice = CommonTestUtils::DEVICE_HETERO + std::string(":mock.1,mock.2");
-    { // Step 1: read and load network without cache
-        ie.LoadNetwork(modelName, heteroDevice);
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 1); // verify: 'load was called'
-        EXPECT_EQ(m_plugin->m_exportCount, 1); // verify: 'export was called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 0); // verify: 'import was not called'
+    deviceToLoad = CommonTestUtils::DEVICE_HETERO + std::string(":mock.1,mock.2");
+    bool useRemoteContext = std::get<2>(GetParam());
+    if (useRemoteContext) {
+        return; // skip the remote Context test for Hetero plugin
+    }
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(1);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 
-    m_plugin->resetCounters();
-
-    { // Step 2: same load, expected import
-        ie.LoadNetwork(modelName, heteroDevice);
-
-        EXPECT_GT(m_plugin->m_getMetricCount, 0); // verify: 'getMetric was called'
-        EXPECT_EQ(m_plugin->m_loadNetworkCount, 0); // verify: 'load was not called'
-        EXPECT_EQ(m_plugin->m_exportCount, 0); // verify: 'export was not called'
-        EXPECT_EQ(m_plugin->m_importNetworkCount, 1); // verify: 'import was called'
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(1);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}});
+            getLoadFunction(std::get<0>(GetParam()))(ie);
+        });
     }
 }
 
-TEST_F(CachingTest, TestChangeCacheDirFailure) {
-    std::string invalidPath = "?*./*qwe/someFile.tmpCache";
-    // Set dir to invalid path name
-    EXPECT_THROW(ie.SetConfig({ {CONFIG_KEY(CACHE_DIR), invalidPath} }), InferenceEngineException);
-}
+INSTANTIATE_TEST_CASE_P(CachingTest, CachingTest,
+                            ::testing::ValuesIn(loadVariants),
+                            getTestCaseName);
