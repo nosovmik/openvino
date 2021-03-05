@@ -20,34 +20,6 @@ using namespace ngraph;
 
 NGRAPH_RTTI_DEFINITION(ngraph::pass::Serialize, "Serialize", 0);
 
-class OstreamAdapter final {
-    std::ostream * _stream;
-    std::streampos _pos;
-
-public:
-    explicit OstreamAdapter(std::ostream * stream)
-        : _stream{stream}
-        , _pos{} { }
-
-    void flush() {
-        if (_stream) {
-            _stream->flush();
-        }
-    }
-
-    void write(const char* s, std::streamsize n) {
-        if (_stream) {
-            _stream->write(s, n);
-        }
-
-        _pos += n;
-    }
-
-    std::streampos tellp() {
-        return _stream ? _stream->tellp() : _pos;
-    }
-};
-
 namespace {  // helpers
 template <typename Container>
 std::string join(const Container& c, const char* glue = ", ") {
@@ -86,7 +58,7 @@ std::string translate_type_name(const std::string& name) {
 }
 
 void ngfunction_2_irv10(pugi::xml_node& node,
-                        std::shared_ptr<OstreamAdapter> bin_file,
+                        std::ostream& bin_file,
                         const ngraph::Function& f,
                         const std::map<std::string, ngraph::OpSet>& custom_opsets);
 
@@ -143,7 +115,7 @@ private:
 
 class XmlSerializer : public ngraph::AttributeVisitor {
     pugi::xml_node& m_xml_node;
-    std::shared_ptr<OstreamAdapter> m_bin_data;
+    std::ostream& m_bin_data;
     std::string& m_node_type_name;
     const std::map<std::string, ngraph::OpSet>& m_custom_opsets;
 
@@ -155,7 +127,7 @@ class XmlSerializer : public ngraph::AttributeVisitor {
 
 public:
     XmlSerializer(pugi::xml_node& data,
-                  const std::shared_ptr<OstreamAdapter>& bin_data,
+                  std::ostream& bin_data,
                   std::string& node_type_name,
                   const std::map<std::string, ngraph::OpSet>& custom_opsets)
         : m_xml_node(data)
@@ -278,13 +250,13 @@ public:
         } else if (const auto& a = ngraph::as_type<ngraph::AttributeAdapter<std::shared_ptr<ngraph::runtime::AlignedBuffer>>>(&adapter)) {
             if (name == "value" &&  translate_type_name(m_node_type_name) == "Const") {
                 const int64_t size = a->get()->size();
-                const int64_t offset = m_bin_data->tellp();
+                const int64_t offset = m_bin_data.tellp();
 
                 m_xml_node.append_attribute("offset").set_value(offset);
                 m_xml_node.append_attribute("size").set_value(size);
 
                 auto data = static_cast<const char*>(a->get()->get_ptr());
-                m_bin_data->write(data, size);
+                m_bin_data.write(data, size);
             }
         }
     }
@@ -603,7 +575,7 @@ bool resolve_dynamic_shapes(const ngraph::Function& f) {
 }
 
 void ngfunction_2_irv10(pugi::xml_node& netXml,
-                        std::shared_ptr<OstreamAdapter> bin_file,
+                        std::ostream& bin_file,
                         const ngraph::Function& f,
                         const std::map<std::string, ngraph::OpSet>& custom_opsets) {
     const bool exec_graph = is_exec_graph(f);
@@ -745,7 +717,7 @@ void ngfunction_2_irv10(pugi::xml_node& netXml,
 bool pass::Serialize::run_on_function(std::shared_ptr<ngraph::Function> f) {
     RUN_ON_FUNCTION_SCOPE(Serialize);
 
-    auto serializeFunc = [&] (std::ostream & xml_file, const std::shared_ptr<OstreamAdapter> & bin_file) {
+    auto serializeFunc = [&] (std::ostream & xml_file, std::ostream & bin_file) {
         switch (m_version) {
         case Version::IR_V10:
             {
@@ -757,7 +729,7 @@ bool pass::Serialize::run_on_function(std::shared_ptr<ngraph::Function> f) {
 
                 xml_doc.save(xml_file);
                 xml_file.flush();
-                bin_file->flush();
+                bin_file.flush();
             }
             break;
         default:
@@ -767,7 +739,7 @@ bool pass::Serialize::run_on_function(std::shared_ptr<ngraph::Function> f) {
     };
 
     if (m_xmlFile && m_binFile) {
-        serializeFunc(*m_xmlFile, m_binFile);
+        serializeFunc(*m_xmlFile, *m_binFile);
     } else {
         std::ofstream bin_file(m_binPath, std::ios::out | std::ios::binary);
         NGRAPH_CHECK(bin_file, "Can't open bin file: \"" + m_binPath + "\"");
@@ -776,7 +748,7 @@ bool pass::Serialize::run_on_function(std::shared_ptr<ngraph::Function> f) {
         std::ofstream xml_file(m_xmlPath, std::ios::out);
         NGRAPH_CHECK(xml_file, "Can't open xml file: \"" + m_xmlPath + "\"");
 
-        serializeFunc(xml_file, std::make_shared<OstreamAdapter>(&bin_file));
+        serializeFunc(xml_file, bin_file);
     }
 
     // Return false because we didn't change nGraph Function
@@ -810,12 +782,12 @@ std::string provide_bin_path(const std::string &xmlPath, const std::string &binP
 
 } // namespace
 
-pass::Serialize::Serialize(std::ostream * xmlFile,
-                           std::ostream * binFile,
+pass::Serialize::Serialize(std::ostream & xmlFile,
+                           std::ostream & binFile,
                            pass::Serialize::Version version,
                            const std::map<std::string, OpSet>& custom_opsets)
-    : m_xmlFile{xmlFile}
-    , m_binFile{std::make_shared<OstreamAdapter>(binFile)}
+    : m_xmlFile{&xmlFile}
+    , m_binFile{&binFile}
     , m_xmlPath{}
     , m_binPath{}
     , m_version{version}

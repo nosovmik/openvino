@@ -57,7 +57,7 @@ struct NetworkCompilationContext final {
         auto & icnnnet = static_cast<ICNNNetwork &>(networkCopy);
         auto & ngraphImpl = dynamic_cast<details::CNNNetworkNGraphImpl &>(icnnnet);
 
-        ngraph::pass::Serialize serializer(&xmlFile, &binFile,
+        ngraph::pass::Serialize serializer(xmlFile, binFile,
             ngraph::pass::Serialize::Version::IR_V10, ngraphImpl.getExtensions());
         serializer.run_on_function(ngraphImpl.getFunction());
 
