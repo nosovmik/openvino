@@ -175,7 +175,7 @@ class Core::Impl : public ICore {
         };
         CoreConfig() = default;
 
-        void setAndUpdate(std::map<std::string, std::string> & config) {
+        void setAndUpdate(std::map<std::string, std::string>& config) {
             std::lock_guard<std::mutex> lock(_cacheConfigMutex);
             auto it = config.find(CONFIG_KEY(CACHE_DIR));
             if (it != config.end()) {
@@ -185,7 +185,7 @@ class Core::Impl : public ICore {
                         THROW_IE_EXCEPTION << "Couldn't create cache directory ["
                                            << it->second << "], err=" << strerror(errno) << ")";
                     }
-                    _cacheConfig._cacheManager = std::make_shared<FileStorageCacheManager>(it->second);
+                    _cacheConfig._cacheManager = std::make_shared<FileStorageCacheManager>(std::move(it->second));
                 } else {
                     _cacheConfig._cacheManager = nullptr;
                 }
@@ -205,7 +205,7 @@ class Core::Impl : public ICore {
         CacheConfig _cacheConfig;
     };
 
-    // Core settings (cache directory, etc)
+    // Core settings (cache config, etc)
     CoreConfig coreConfig;
 
     struct PluginDescriptor {
@@ -326,7 +326,7 @@ class Core::Impl : public ICore {
             auto value = plugin.GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), getMetricConfig);
             compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = value.as<std::string>();
         } else {
-            // WA: take device name at least if device does not support DEVICE_ARCHITECTURE metric
+            // Take device name if device does not support DEVICE_ARCHITECTURE metric
             compileConfig[METRIC_KEY(DEVICE_ARCHITECTURE)] = deviceFamily;
         }
         return compileConfig;
@@ -336,17 +336,14 @@ class Core::Impl : public ICore {
                                      const InferencePlugin& plugin,
                                      const std::map<std::string, std::string>& config) const {
         auto compileConfig = CreateCompileConfig(plugin, deviceFamily, config);
-        NetworkCompilationContext context(network, compileConfig);
-        return context.computeHash();
+        return NetworkCompilationContext::computeHash(network, compileConfig);
     }
 
     std::string CalculateFileHash(const std::string& modelName, const std::string& deviceFamily,
                                   const InferencePlugin& plugin,
                                   const std::map<std::string, std::string>& config) const {
         auto compileConfig = CreateCompileConfig(plugin, deviceFamily, config);
-
-        NetworkCompilationContext context(modelName, compileConfig);
-        return context.computeHash();
+        return NetworkCompilationContext::computeHash(modelName, compileConfig);
     }
 
 public:

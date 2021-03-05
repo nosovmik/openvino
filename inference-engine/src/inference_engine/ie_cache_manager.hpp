@@ -89,7 +89,7 @@ public:
      * @brief Constructor
      *
      */
-    explicit FileStorageCacheManager(const std::string& cachePath) : m_cachePath(cachePath) {}
+    FileStorageCacheManager(std::string&& cachePath) : m_cachePath(std::move(cachePath)) {}
 
     /**
      * @brief Destructor

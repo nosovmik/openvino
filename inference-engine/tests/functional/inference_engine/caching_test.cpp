@@ -636,6 +636,119 @@ TEST_F(CachingTest, TestFileModified) {
     }
 }
 
+TEST_P(CachingTest, TestCacheFileCorrupted) {
+    // Test is only for loadByName
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
+    }
+    {
+        auto blobs = CommonTestUtils::listFilesWithExt("testCache", "blob");
+        for (const auto& fileName : blobs) {
+            std::ofstream stream(fileName, std::ios_base::binary);
+            stream << "SomeCorruptedText";
+        }
+    }
+    { // Step 2. Cache is corrupted, will be silently removed
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
+    }
+    { // Step 3: same load, should be ok now due to re-creation of cache
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
+    }
+}
+
+TEST_P(CachingTest, TestCacheFileOldVersion) {
+    // Test is only for loadByName
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(SUPPORTED_METRICS), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(IMPORT_EXPORT_SUPPORT), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, GetMetric(METRIC_KEY(DEVICE_ARCHITECTURE), _)).Times(AnyNumber());
+
+    bool useRemoteContext = std::get<2>(GetParam());
+    {
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
+    }
+    {
+        auto blobs = CommonTestUtils::listFilesWithExt("testCache", "blob");
+        for (const auto& fileName : blobs) {
+            std::string content;
+            {
+                std::ifstream inp(fileName, std::ios_base::binary);
+                std::ostringstream ostr;
+                ostr << inp.rdbuf();
+                content = ostr.str();
+            }
+            std::string buildNum = GetInferenceEngineVersion()->buildNumber;
+            std::string zeroBuild(buildNum.size(), '0');
+            auto index = content.find(buildNum);
+            if (index != std::string::npos) {
+                content.replace(index, buildNum.size(), zeroBuild);
+            } else {
+                SKIP();
+            }
+            std::ofstream out(fileName, std::ios_base::binary);
+            out.write(content.c_str(), content.size());
+        }
+    }
+    { // Step 2. Build number mismatch, cache will be silently removed
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(1);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
+    }
+    { // Step 3: same load, should be ok now due to re-creation of cache
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, LoadExeNetworkImpl(_, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _, _)).Times(useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, ImportNetworkImpl(_, _)).Times(!useRemoteContext ? 1 : 0);
+        EXPECT_CALL(*net, ExportImpl(_)).Times(0);
+        testLoad([&](Core &ie) {
+            EXPECT_NO_THROW(ie.SetConfig({{CONFIG_KEY(CACHE_DIR), "testCache"}}));
+            EXPECT_NO_THROW(getLoadFunction(std::get<0>(GetParam()))(ie));
+        });
+    }
+}
+
 TEST_P(CachingTest, LoadHeteroWithCorrectConfig) {
     EXPECT_CALL(*mockPlugin, GetMetric(_, _)).Times(AnyNumber());
     EXPECT_CALL(*mockPlugin, QueryNetwork(_, _)).Times(AnyNumber());
