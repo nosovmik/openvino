@@ -32,6 +32,8 @@
 #include "op/softmax.hpp"
 #include "op/split.h"
 #include "op/transpose2.hpp"
+#include "op/yolo_box.hpp"
+#include "op/multiclass_nms.hpp"
 
 #include "op_table.hpp"
 
@@ -65,6 +67,8 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"max_pool2d_with_index", op::pool2d}, //adaptive_max_pool2d
             {"softmax", op::softmax},
             {"transpose2", op::transpose2}
+            {"yolo_box", op::yolo_box},
+            {"multiclass_nms3", op::multiclass_nms}
     };
 };
 
