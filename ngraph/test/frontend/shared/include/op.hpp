@@ -16,7 +16,7 @@
 #include "util/test_tools.hpp"
 
 using Inputs = std::vector<std::vector<float>>;
-using Outputs = std::vector<std::vector<float>>; 
+using Outputs = std::vector<std::vector<float>>;
 
 struct FrontendOpTestParam {
     std::string              m_frontEndName;
@@ -41,5 +41,5 @@ public:
     
 protected:
     void initParamTest();
-    void doLoadFromFile();    
+    void validateOp();    
 };
