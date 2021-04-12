@@ -34,6 +34,9 @@
 #include "op/transpose2.hpp"
 #include "op/yolo_box.hpp"
 #include "op/multiclass_nms.hpp"
+#include "op/rnn.hpp"
+#include "op/fill_constant.hpp"
+#include "op/transpose2.hpp"
 
 #include "op_table.hpp"
 
@@ -69,6 +72,9 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"transpose2", op::transpose2},
             {"yolo_box", op::yolo_box},
             {"multiclass_nms3", op::multiclass_nms}
+            {"softmax", op::softmax},
+            {"rnn", op::rnn},
+            {"fill_constant", op::fill_constant}
     };
 };
 
