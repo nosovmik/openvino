@@ -39,7 +39,7 @@ void FrontendOpTest::validateOp() {
 
     // convert
     std::shared_ptr<ngraph::Function> function;
-    ASSERT_NO_THROW(function = m_frontEnd->convert(m_inputModel));
+    function = m_frontEnd->convert(m_inputModel);
     ASSERT_NE(function, nullptr);
 
     // run

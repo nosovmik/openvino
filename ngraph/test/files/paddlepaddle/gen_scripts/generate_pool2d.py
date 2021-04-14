@@ -11,13 +11,16 @@ def pool2d(name : str, x, attrs : dict):
     exclusive = False
     if 'exclusive' in attrs:
         exclusive = attrs['exclusive']
+    global_pool=False
+    if 'global_pool' in attrs:
+        global_pool = attrs['global_pool']
 
     node_x = pdpd.static.data(name='x', shape=x.shape, dtype='float32')
     out = pdpd.fluid.layers.pool2d(node_x, pool_size=attrs['kernel_size'],
                                    pool_type=attrs['type'],
                                    pool_stride=attrs['stride'],
                                    pool_padding=attrs['pool_padding'],
-                                   global_pooling=False,
+                                   global_pooling=global_pool,
                                    exclusive=exclusive)
 
     cpu = pdpd.static.cpu_places(1)
@@ -52,7 +55,7 @@ def main():
     pool2d("maxPool", data, pdpd_max_attrs)
 
     # maxGlobalPool
-    spatial_shape = np.ndim(data) - 2
+    spatial_shape = np.ndim(data)
     pdpd_max_global_attrs = {
         'kernel_size': [spatial_shape, spatial_shape],
         'type': 'max',
