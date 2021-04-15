@@ -382,3 +382,101 @@ namespace avgPool2D {
                             ),                        
                             avgPool2DTest::getTestCaseName); 
 }
+
+/* maxAaptivePool2D */
+namespace maxAaptivePool2D {
+    using maxAaptivePool2DTestParam = FrontendOpTestParam;
+    using maxAaptivePool2DTest = FrontendOpTest;
+
+    static maxAaptivePool2DTestParam maxAdaptivePool_test1() {
+        maxAaptivePool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "maxAdaptivePool2D_test1";
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 2, 2)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{5.00, 6.00, 7.00 },
+                                                                    {9.00, 10.00, 11.00 },
+                                                                    {13.00, 14.00, 15.00 }},
+                                                                    {{21.00, 22.00, 23.00 },
+                                                                    {25.00, 26.00, 27.00 },
+                                                                    {29.00, 30.00, 31.00 }},
+                                                                    {{37.00, 38.00, 39.00 },
+                                                                    {41.00, 42.00, 43.00 },
+                                                                    {45.00, 46.00, 47.00 }}},
+                                                                    {{{53.00, 54.00, 55.00 },
+                                                                    {57.00, 58.00, 59.00 },
+                                                                    {61.00, 62.00, 63.00 }},
+                                                                    {{69.00, 70.00, 71.00 },
+                                                                    {73.00, 74.00, 75.00 },
+                                                                    {77.00, 78.00, 79.00 }},
+                                                                    {{85.00, 86.00, 87.00 },
+                                                                    {89.00, 90.00, 91.00 },
+                                                                    {93.00, 94.00, 95.00 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+
+    TEST_P(maxAaptivePool2DTest, test_adaptive_pool2d) {
+        validateOp();
+    }
+
+    INSTANTIATE_TEST_CASE_P(FrontendOpTest, maxAaptivePool2DTest,
+                            ::testing::Values(
+                                maxAdaptivePool_test1()
+                            ),                        
+                            maxAaptivePool2DTest::getTestCaseName); 
+}
+
+/* avgAaptivePool2D */
+namespace avgAaptivePool2D {
+    using avgAaptivePool2DTestParam = FrontendOpTestParam;
+    using avgAaptivePool2DTest = FrontendOpTest;
+
+    static avgAaptivePool2DTestParam avgAdaptivePool_test1() {
+        avgAaptivePool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "avgAdaptivePool2D_test1";
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 2, 2)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{2.50, 3.50, 4.50 },
+                                                                    {6.50, 7.50, 8.50 },
+                                                                    {10.50, 11.50, 12.50 }},
+                                                                    {{18.50, 19.50, 20.50 },
+                                                                    {22.50, 23.50, 24.50 },
+                                                                    {26.50, 27.50, 28.50 }},
+                                                                    {{34.50, 35.50, 36.50 },
+                                                                    {38.50, 39.50, 40.50 },
+                                                                    {42.50, 43.50, 44.50 }}},
+                                                                    {{{50.50, 51.50, 52.50 },
+                                                                    {54.50, 55.50, 56.50 },
+                                                                    {58.50, 59.50, 60.50 }},
+                                                                    {{66.50, 67.50, 68.50 },
+                                                                    {70.50, 71.50, 72.50 },
+                                                                    {74.50, 75.50, 76.50 }},
+                                                                    {{82.50, 83.50, 84.50 },
+                                                                    {86.50, 87.50, 88.50 },
+                                                                    {90.50, 91.50, 92.50 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+
+    TEST_P(avgAaptivePool2DTest, test_adaptive_pool2d) {
+        validateOp();
+    }
+
+    INSTANTIATE_TEST_CASE_P(FrontendOpTest, avgAaptivePool2DTest,
+                            ::testing::Values(
+                                avgAdaptivePool_test1()
+                            ),                        
+                            avgAaptivePool2DTest::getTestCaseName); 
+}

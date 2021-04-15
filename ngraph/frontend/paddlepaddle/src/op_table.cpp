@@ -60,8 +60,9 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"nearest_interp_v2", op::nearest_interp_v2},
             {"concat", op::concat},
             {"cast", op::cast},
-            {"softmax", op::softmax},
-            {"split", op::split}
+            {"split", op::split},
+            {"max_pool2d_with_index", op::pool2d}, //adaptive_max_pool2d
+            {"softmax", op::softmax}
     };
 };
 
