@@ -50,7 +50,7 @@ def main():
         'kernel_size': [3, 3],
         'type': 'max',
         'stride': 1,
-        'pool_padding': 0
+        'pool_padding': 1
     }    
     pool2d("maxPool", data, pdpd_max_attrs)
 

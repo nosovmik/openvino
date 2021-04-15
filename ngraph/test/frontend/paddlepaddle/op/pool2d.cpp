@@ -28,8 +28,10 @@ static pool2dTestParam maxPool() {
                             .get_vector());
 
     // (1, 1, 2, 2)
-    res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{11.0, 12.0 },
-                                                                    {15.0, 16.0 }}}}})
+    res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{6.0, 7.0, 8.0, 8.0 },
+                                                                {10.0, 11.0, 12.0, 12.0 },
+                                                                {14.0, 15.0, 16.0, 16.0 },
+                                                                {14.0, 15.0, 16.0, 16.0 }}}}})
                                .get_vector());
 
     return res;
