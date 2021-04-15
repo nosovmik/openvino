@@ -37,13 +37,11 @@ static void get_paddings(const NodeContext& node, ngraph::Shape& pad_begin, ngra
         throw std::runtime_error("Unsupported pooling padding_algorithm " + pad_algo);
     }
 
-    /*如果它是一个元组或列表，它可以有3种格式：
-    (1)包含2个整数值：[pad_height, pad_width]；
-    (2)包含4个整数值：[pad_height_top, pad_height_bottom, pad_width_left, pad_width_right]；
-    (3)包含4个二元组：
-    当 data_format 为"NCHW"时为 [[0,0], [0,0], [pad_height_top, pad_height_bottom], [pad_width_left, pad_width_right]]，
-    当 data_format 为"NHWC"时为[[0,0], [pad_height_top, pad_height_bottom], [pad_width_left, pad_width_right], [0,0]]。
-    若为一个整数，则表示H和W维度上均为该值。默认值：0。*/
+    /*If pool padding size is a tuple or list, it could be in three forms: 
+    [pad_height, pad_width] or [pad_height_top, pad_height_bottom, pad_width_left, pad_width_right], 
+    and when data_format is “NCHW”, pool_padding can be in the form [[0,0], [0,0], [pad_height_top, pad_height_bottom], [pad_width_left, pad_width_right]]. 
+    when data_format is “NHWC”, pool_padding can be in the form [[0,0], [pad_height_top, pad_height_bottom], [pad_width_left, pad_width_right], [0,0]]. 
+    Otherwise, the pool padding size will be a square of an int.*/
     auto paddings = node.get_attribute<std::vector<int32_t>>("paddings");
     auto data_format = node.get_attribute<std::string>("data_format");  
 
