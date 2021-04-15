@@ -30,7 +30,11 @@
 #include "op/concat.hpp"
 #include "op/cast.hpp"
 #include "op/softmax.hpp"
+<<<<<<< HEAD
 #include "op/split.h"
+=======
+#include "op/transpose2.hpp"
+>>>>>>> 46419e77a... Add transpose2 to op_table
 
 #include "op_table.hpp"
 
@@ -62,7 +66,8 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"cast", op::cast},
             {"split", op::split},
             {"max_pool2d_with_index", op::pool2d}, //adaptive_max_pool2d
-            {"softmax", op::softmax}
+            {"softmax", op::softmax},
+            {"transpose2", op::transpose2}
     };
 };
 
