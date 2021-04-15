@@ -30,7 +30,8 @@ static void get_paddings(const NodeContext& node, ngraph::Shape& pad_begin, ngra
         auto_pad = ngraph::op::PadType::SAME_UPPER;
     } else if (pad_algo == "VALID") {
         auto_pad = ngraph::op::PadType::VALID;
-    } else if (pad_algo == "EXPLICIT") {
+    } else if ((pad_algo == "EXPLICIT") ||
+             pad_algo.empty()) { //adaptive_maxpool with no such attr.
         auto_pad = ngraph::op::PadType::EXPLICIT;
     }else {
         // FIXME
@@ -90,6 +91,10 @@ OutputVector pool2d (const NodeContext& node) {
                                 ? ngraph::op::RoundingType::CEIL
                                 : ngraph::op::RoundingType::FLOOR;
 
+    if (pooling_type.empty()) { // TODO: to check op.type "max_pool2d_with_index"
+        pooling_type = "max";
+    }            
+
     MY_ASSERT((pooling_type == "max") || (pooling_type == "avg"), 
                     "pool2d: not supported pooling type !"); 
     MY_ASSERT(kernel_shape.size()==1 || kernel_shape.size()==2, 
@@ -119,7 +124,7 @@ OutputVector pool2d (const NodeContext& node) {
                         ngraph::Shape{input_h,input_w})};
         } else {
             // TODO : resolve axes according to rank
-            auto axes = ngraph::opset6::Constant::create(ngraph::element::i64, {2}, {2, 3});
+            auto axes = ngraph::opset6::Constant::create(ngraph::element::i64, {2}, {input_rank-2, input_rank-1});
             return {std::make_shared<ngraph::opset6::ReduceMean>(data, axes, true)};           
         }                    
     } else if (adaptive) {        
