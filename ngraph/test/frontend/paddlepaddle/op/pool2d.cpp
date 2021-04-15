@@ -10,86 +10,375 @@ using namespace ngraph::frontend;
 static const std::string PDPD = "pdpd";
 static const std::string PATH_TO_MODELS = "/paddlepaddle/models/";
 
-using pool2dTestParam = FrontendOpTestParam;
-using pool2dTest = FrontendOpTest;
+auto shared_input_NCHW = test::NDArray<float, 4>{{{{{0.0, 1.0, 2.0, 3.0 },
+                                                    {4.0, 5.0, 6.0, 7.0 },
+                                                    {8.0, 9.0, 10.0, 11.0 },
+                                                    {12.0, 13.0, 14.0, 15.0 }},
+                                                    {{16.0, 17.0, 18.0, 19.0 },
+                                                    {20.0, 21.0, 22.0, 23.0 },
+                                                    {24.0, 25.0, 26.0, 27.0 },
+                                                    {28.0, 29.0, 30.0, 31.0 }},
+                                                    {{32.0, 33.0, 34.0, 35.0 },
+                                                    {36.0, 37.0, 38.0, 39.0 },
+                                                    {40.0, 41.0, 42.0, 43.0 },
+                                                    {44.0, 45.0, 46.0, 47.0 }}},
+                                                    {{{48.0, 49.0, 50.0, 51.0 },
+                                                    {52.0, 53.0, 54.0, 55.0 },
+                                                    {56.0, 57.0, 58.0, 59.0 },
+                                                    {60.0, 61.0, 62.0, 63.0 }},
+                                                    {{64.0, 65.0, 66.0, 67.0 },
+                                                    {68.0, 69.0, 70.0, 71.0 },
+                                                    {72.0, 73.0, 74.0, 75.0 },
+                                                    {76.0, 77.0, 78.0, 79.0 }},
+                                                    {{80.0, 81.0, 82.0, 83.0 },
+                                                    {84.0, 85.0, 86.0, 87.0 },
+                                                    {88.0, 89.0, 90.0, 91.0 },
+                                                    {92.0, 93.0, 94.0, 95.0 }}}}}
+                            .get_vector();
 
-static pool2dTestParam maxPool() {
-    pool2dTestParam res;
-    res.m_frontEndName = PDPD;
-    res.m_modelsPath =   PATH_TO_MODELS;
-    res.m_modelName =    "maxPool";  //TODO: compact model/decomposited
+auto shared_input_NHWC = test::NDArray<float, 4>{{{{{0.0, 1.0, 2.0 },
+                                                    {3.0, 4.0, 5.0 },
+                                                    {6.0, 7.0, 8.0 },
+                                                    {9.0, 10.0, 11.0 }},
+                                                    {{12.0, 13.0, 14.0 },
+                                                    {15.0, 16.0, 17.0 },
+                                                    {18.0, 19.0, 20.0 },
+                                                    {21.0, 22.0, 23.0 }},
+                                                    {{24.0, 25.0, 26.0 },
+                                                    {27.0, 28.0, 29.0 },
+                                                    {30.0, 31.0, 32.0 },
+                                                    {33.0, 34.0, 35.0 }},
+                                                    {{36.0, 37.0, 38.0 },
+                                                    {39.0, 40.0, 41.0 },
+                                                    {42.0, 43.0, 44.0 },
+                                                    {45.0, 46.0, 47.0 }}},
+                                                    {{{48.0, 49.0, 50.0 },
+                                                    {51.0, 52.0, 53.0 },
+                                                    {54.0, 55.0, 56.0 },
+                                                    {57.0, 58.0, 59.0 }},
+                                                    {{60.0, 61.0, 62.0 },
+                                                    {63.0, 64.0, 65.0 },
+                                                    {66.0, 67.0, 68.0 },
+                                                    {69.0, 70.0, 71.0 }},
+                                                    {{72.0, 73.0, 74.0 },
+                                                    {75.0, 76.0, 77.0 },
+                                                    {78.0, 79.0, 80.0 },
+                                                    {81.0, 82.0, 83.0 }},
+                                                    {{84.0, 85.0, 86.0 },
+                                                    {87.0, 88.0, 89.0 },
+                                                    {90.0, 91.0, 92.0 },
+                                                    {93.0, 94.0, 95.0 }}}}}
+                            .get_vector();                            
 
-    //Inputs inputs;
-    // data (1, 1, 4, 4) input tensor
-    res.inputs.emplace_back(test::NDArray<float, 4>{{{{{1.0, 2.0, 3.0, 4.0 },
-                                                        {5.0, 6.0, 7.0, 8.0 },
-                                                        {9.0, 10.0, 11.0, 12.0 },
-                                                        {13.0, 14.0, 15.0, 16.0 }}}}}
-                            .get_vector());
+/* maxPool2D */
+namespace maxPool2D {
 
-    // (1, 1, 2, 2)
-    res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{6.0, 7.0, 8.0, 8.0 },
-                                                                {10.0, 11.0, 12.0, 12.0 },
-                                                                {14.0, 15.0, 16.0, 16.0 },
-                                                                {14.0, 15.0, 16.0, 16.0 }}}}})
-                               .get_vector());
+    using maxPool2DTestParam = FrontendOpTestParam;
+    using maxPool2DTest = FrontendOpTest;
 
-    return res;
+    static maxPool2DTestParam maxPool_test1() {
+        maxPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "maxPool_test1";  //TODO: compact model/decomposited
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 2, 2)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{1.0, 3.0 },
+                                                                    {13.0, 15.0 }},
+                                                                    {{17.0, 19.0 },
+                                                                    {29.0, 31.0 }},
+                                                                    {{33.0, 35.0 },
+                                                                    {45.0, 47.0 }}},
+                                                                    {{{49.0, 51.0 },
+                                                                    {61.0, 63.0 }},
+                                                                    {{65.0, 67.0 },
+                                                                    {77.0, 79.0 }},
+                                                                    {{81.0, 83.0 },
+                                                                    {93.0, 95.0 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+    static maxPool2DTestParam maxPool_test2() {
+        maxPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "maxPool_test2";  //TODO: compact model/decomposited
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 2, 2)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({})
+                                .get_vector());
+
+        return res;
+    }
+    static maxPool2DTestParam maxPool_test3() {
+        maxPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "maxPool_test3";  //TODO: compact model/decomposited
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 2, 2)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{5.00, 7.00 },
+                                                                    {13.00, 15.00 }},
+                                                                    {{21.00, 23.00 },
+                                                                    {29.00, 31.00 }},
+                                                                    {{37.00, 39.00 },
+                                                                    {45.00, 47.00 }}},
+                                                                    {{{53.00, 55.00 },
+                                                                    {61.00, 63.00 }},
+                                                                    {{69.00, 71.00 },
+                                                                    {77.00, 79.00 }},
+                                                                    {{85.00, 87.00 },
+                                                                    {93.00, 95.00 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+    static maxPool2DTestParam maxPool_test4() {
+        maxPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "maxPool_test4";  //TODO: compact model/decomposited
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 1, 1)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{10.00 }},
+                                                                    {{26.00 }},
+                                                                    {{42.00 }}},
+                                                                    {{{58.00 }},
+                                                                    {{74.00 }},
+                                                                    {{90.00 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+    static maxPool2DTestParam maxPool_test5() {
+        maxPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "maxPool_test5";  //TODO: compact model/decomposited
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 1, 1)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{15.00 }},
+                                                                    {{31.00 }},
+                                                                    {{47.00 }}},
+                                                                    {{{63.00 }},
+                                                                    {{79.00 }},
+                                                                    {{95.00 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+    static maxPool2DTestParam maxPool_test6() {
+        maxPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "maxPool_test6";  //TODO: compact model/decomposited
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NHWC);
+
+        // (2, 2, 2, 3)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{3.00, 4.00, 5.00 },
+                                                                    {9.00, 10.00, 11.00 }},
+                                                                    {{39.00, 40.00, 41.00 },
+                                                                    {45.00, 46.00, 47.00 }}},
+                                                                    {{{51.00, 52.00, 53.00 },
+                                                                    {57.00, 58.00, 59.00 }},
+                                                                    {{87.00, 88.00, 89.00 },
+                                                                    {93.00, 94.00, 95.00 }}}}})
+                                .get_vector());
+
+        return res;
+    }                    
+
+    TEST_P(maxPool2DTest, test_pool2d) {
+        validateOp();
+    }
+
+    INSTANTIATE_TEST_CASE_P(FrontendOpTest, maxPool2DTest,
+                            ::testing::Values(
+                                maxPool_test1(),
+                                //maxPool_test2(),
+                                maxPool_test3(),
+                                maxPool_test4(),
+                                maxPool_test5(),
+                                maxPool_test6()
+                            ),                        
+                            maxPool2DTest::getTestCaseName); 
 }
 
-static pool2dTestParam avgPool() {
-    pool2dTestParam res;
-    res.m_frontEndName = PDPD;
-    res.m_modelsPath =   PATH_TO_MODELS;
-    res.m_modelName =    "avgPool";  //TODO: compact model/decomposited
+/* avgPool2D */
+namespace avgPool2D {
+    using avgPool2DTestParam = FrontendOpTestParam;
+    using avgPool2DTest = FrontendOpTest;
 
-    //Inputs inputs;
-    // data (1, 1, 4, 4) input tensor
-    res.inputs.emplace_back(test::NDArray<float, 4>{{{{{1.0, 2.0, 3.0, 4.0 },
-                                                        {5.0, 6.0, 7.0, 8.0 },
-                                                        {9.0, 10.0, 11.0, 12.0 },
-                                                        {13.0, 14.0, 15.0, 16.0 }}}}}
-                            .get_vector());
+    static avgPool2DTestParam avgPool_test1() {
+        avgPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "avgPool_test1";
 
-    // (1, 1, 4, 4)
-    res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{3.5, 4.0, 5.0, 5.5 },
-                                                                    {5.5, 6.0, 7.0, 7.5 },
-                                                                    {9.5, 10.0, 11.0, 11.5 },
-                                                                    {11.5, 12.0, 13.0, 13.5 }}}}})
-                               .get_vector());
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
 
-    return res;
+        // (2, 3, 2, 2)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{0.50, 2.50 },
+                                                                    {8.50, 10.50 }},
+                                                                    {{16.50, 18.50 },
+                                                                    {24.50, 26.50 }},
+                                                                    {{32.50, 34.50 },
+                                                                    {40.50, 42.50 }}},
+                                                                    {{{48.50, 50.50 },
+                                                                    {56.50, 58.50 }},
+                                                                    {{64.50, 66.50 },
+                                                                    {72.50, 74.50 }},
+                                                                    {{80.50, 82.50 },
+                                                                    {88.50, 90.50 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+
+    static avgPool2DTestParam avgPool_test2() {
+        avgPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "avgPool_test2";
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (1, 1, 4, 4)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{7.5 }},
+                                                                    {{23.5 }},
+                                                                    {{39.5 }}},
+                                                                    {{{55.5 }},
+                                                                    {{71.5 }},
+                                                                    {{87.5 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+
+    static avgPool2DTestParam avgPool_test3() {
+        avgPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "avgPool_test3";
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 2, 2)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{2.50, 4.50 },
+                                                                    {10.50, 12.50 }},
+                                                                    {{18.50, 20.50 },
+                                                                    {26.50, 28.50 }},
+                                                                    {{34.50, 36.50 },
+                                                                    {42.50, 44.50 }}},
+                                                                    {{{50.50, 52.50 },
+                                                                    {58.50, 60.50 }},
+                                                                    {{66.50, 68.50 },
+                                                                    {74.50, 76.50 }},
+                                                                    {{82.50, 84.50 },
+                                                                    {90.50, 92.50 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+
+    static avgPool2DTestParam avgPool_test4() {
+        avgPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "avgPool_test4";
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 1, 1)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{5.00 }},
+                                                                    {{21.00 }},
+                                                                    {{37.00 }}},
+                                                                    {{{53.00 }},
+                                                                    {{69.00 }},
+                                                                    {{85.00 }}}}})
+                                .get_vector());
+
+        return res;
+    }                
+
+    static avgPool2DTestParam avgPool_test5() {
+        avgPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "avgPool_test5";
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NCHW);
+
+        // (2, 3, 1, 1)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{7.5 }},
+                                                                    {{23.5 }},
+                                                                    {{39.5 }}},
+                                                                    {{{55.5 }},
+                                                                    {{71.5 }},
+                                                                    {{87.5 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+
+    static avgPool2DTestParam avgPool_test6() {
+        avgPool2DTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "avgPool_test6";  //TODO: compact model/decomposited
+
+        // data (2, 3, 4, 4) input tensor
+        res.inputs.emplace_back(shared_input_NHWC);
+
+        // (2, 2, 2, 3)
+        res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{1.5, 2.5, 3.5 },
+                                                                    {7.5, 8.5, 9.5 }},
+                                                                    {{25.5, 26.5, 27.5 },
+                                                                    {31.5, 32.5, 33.5 }}},
+                                                                    {{{49.5, 50.5, 51.5 },
+                                                                    {55.5, 56.5, 57.5 }},
+                                                                    {{73.5, 74.5, 75.5 },
+                                                                    {79.5, 80.5, 81.5 }}}}})
+                                .get_vector());
+
+        return res;
+    }
+
+    TEST_P(avgPool2DTest, test_pool2d) {
+        validateOp();
+    }
+
+    INSTANTIATE_TEST_CASE_P(FrontendOpTest, avgPool2DTest,
+                            ::testing::Values(
+                                avgPool_test1(),
+                                //avgPool_test2(),
+                                avgPool_test3(),
+                                avgPool_test4(),
+                                avgPool_test5(),
+                                avgPool_test6()
+                            ),                        
+                            avgPool2DTest::getTestCaseName); 
 }
-
-static pool2dTestParam maxGlobalPool() {
-    pool2dTestParam res;
-    res.m_frontEndName = PDPD;
-    res.m_modelsPath =   PATH_TO_MODELS;
-    res.m_modelName =    "maxGlobalPool";  //TODO: compact model/decomposited
-
-    //Inputs inputs;
-    // data (1, 1, 4, 4) input tensor
-    res.inputs.emplace_back(test::NDArray<float, 4>{{{{{1.0, 2.0, 3.0, 4.0 },
-                                                        {5.0, 6.0, 7.0, 8.0 },
-                                                        {9.0, 10.0, 11.0, 12.0 },
-                                                        {13.0, 14.0, 15.0, 16.0 }}}}}
-                            .get_vector());
-
-    // (1, 1, 1, 1)
-    res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{{16.0 }}}}})
-                               .get_vector());
-
-    return res;
-}
-
-TEST_P(pool2dTest, test_pool2d) {
-    validateOp();
-}
-
-INSTANTIATE_TEST_CASE_P(FrontendOpTest, pool2dTest,
-                        ::testing::Values(
-                            avgPool(),
-                            maxPool(),                            
-                            maxGlobalPool()
-                        ),                        
-                        pool2dTest::getTestCaseName);                                                 

@@ -4,81 +4,147 @@
 import numpy as np
 from save_model import saveModel
 
+data_type = 'float32'
+
 def pool2d(name : str, x, attrs : dict):
     import paddle as pdpd
     pdpd.enable_static()
     
-    exclusive = False
-    if 'exclusive' in attrs:
-        exclusive = attrs['exclusive']
-    global_pool=False
-    if 'global_pool' in attrs:
-        global_pool = attrs['global_pool']
+    with pdpd.static.program_guard(pdpd.static.Program(), pdpd.static.Program()):
+        node_x = pdpd.static.data(name='x', shape=x.shape, dtype=data_type)
+        out = pdpd.fluid.layers.pool2d(node_x, 
+                                    pool_size=attrs['pool_size'],
+                                    pool_type=attrs['pool_type'],
+                                    pool_stride=attrs['pool_stride'],
+                                    pool_padding=attrs['pool_padding'],
+                                    global_pooling=attrs['global_pooling'],
+                                    ceil_mode=attrs['ceil_mode'],
+                                    exclusive=attrs['exclusive'],
+                                    data_format=attrs['data_format'])
 
-    node_x = pdpd.static.data(name='x', shape=x.shape, dtype='float32')
-    out = pdpd.fluid.layers.pool2d(node_x, pool_size=attrs['kernel_size'],
-                                   pool_type=attrs['type'],
-                                   pool_stride=attrs['stride'],
-                                   pool_padding=attrs['pool_padding'],
-                                   global_pooling=global_pool,
-                                   exclusive=exclusive)
+        cpu = pdpd.static.cpu_places(1)
+        exe = pdpd.static.Executor(cpu[0])
+        # startup program will call initializer to initialize the parameters.
+        exe.run(pdpd.static.default_startup_program())
 
-    cpu = pdpd.static.cpu_places(1)
-    exe = pdpd.static.Executor(cpu[0])
-    # startup program will call initializer to initialize the parameters.
-    exe.run(pdpd.static.default_startup_program())
+        outs = exe.run(
+            feed={'x': x},
+            fetch_list=[out])             
 
-    outs = exe.run(
-        feed={'x': x},
-        fetch_list=[out])             
-
-    saveModel(name, exe, feedkeys=['x'], fetchlist=[out], inputs=[x], outputs=[outs[0]])
+        saveModel(name, exe, feedkeys=['x'], fetchlist=[out], inputs=[x], outputs=[outs[0]])
 
     return outs[0]
 
 
 def main():
-    data = np.array([[[
-        [1, 2, 3, 4],
-        [5, 6, 7, 8],
-        [9, 10, 11, 12],
-        [13, 14, 15, 16],
-    ]]]).astype(np.float32)
+    N, C, H, W = 2, 3, 4, 4
+    data = np.arange(N*C*H*W).astype(data_type)
+    data_NCHW = data.reshape(N, C, H, W)
+    data_NHWC = data.reshape(N, H, W, C)
+    #print(data_NCHW, data_NCHW.shape)
 
-    # maxPool
-    pdpd_max_attrs = {
-        'kernel_size': [3, 3],
-        'type': 'max',
-        'stride': 1,
-        'pool_padding': 1
-    }    
-    pool2d("maxPool", data, pdpd_max_attrs)
+    pooling_types = ['max', 'avg']
 
-    # maxGlobalPool
-    spatial_shape = np.ndim(data)
-    pdpd_max_global_attrs = {
-        'kernel_size': [spatial_shape, spatial_shape],
-        'type': 'max',
-        'stride': 1,
-        'pool_padding': 0,
-        'global_pool': True}
+    for i, pooling_type in enumerate(pooling_types):
+        # example 1:
+        # ceil_mode = False
+        pdpd_attrs = {
+            # input=data_NCHW, # shape: [2, 3, 8, 8]
+            'pool_size' : [3,3],
+            'pool_type' : pooling_type,
+            'pool_stride' : [3,3],
+            'pool_padding' : [2,1], # it is same as pool_padding = [2,2,1,1]
+            'global_pooling' : False,
+            'ceil_mode' : False,
+            'exclusive' : True,
+            'data_format' : "NCHW"
+        }
+        # shape of out_1: [2, 3, 4, 3]    
+        pool2d(pooling_type+'Pool_test1', data_NCHW, pdpd_attrs)
 
-    pool2d("maxGlobalPool", data, pdpd_max_global_attrs)
+        # Cecilia: there is a bug of PaddlePaddle in this case.
+        # example 2: 
+        # ceil_mode = True (different from example 1)
+        pdpd_attrs = {
+                    #input=data_NCHW,
+                    'pool_size':[3,3],
+                    'pool_type' : pooling_type,
+                    'pool_stride' : [3,3],
+                    'pool_padding':[[0,0], [0,0], [2,2], [1,1]], # it is same as pool_padding = [2,2,1,1]
+                    'global_pooling':False,
+                    'ceil_mode':True,
+                    'exclusive':True,
+                    'data_format':"NCHW"
+        }
+        # shape of out_2: [2, 3, 4, 4] which is different from out_1
+        pool2d(pooling_type+'Pool_test2', data_NCHW, pdpd_attrs)
 
-    # avgPool
-    pdpd_avg_attrs = {'kernel_size': [3, 3],
-                      'type': 'avg',
-                      'stride': 1,
-                      'pool_padding': 1,
-                      'exclusive': True}
-    ng_avg_attrs = {
-        'kernel_size': [3, 3],
-        'type': 'avg',
-        'stride': [1, 1],
-        'padding': [1, 1],
-        'exclude_pad': True
-    }
-    pool2d("avgPool", data, pdpd_avg_attrs)   
+        # example 3:
+        # pool_padding = "SAME" (different from example 1)
+        pdpd_attrs = {
+                    #input=data_NCHW,
+                    'pool_size':[3,3],
+                    'pool_type' : pooling_type,
+                    'pool_stride' : [3,3],
+                    'pool_padding':"SAME",
+                    'global_pooling':False,
+                    'ceil_mode':False,
+                    'exclusive':True,
+                    'data_format':"NCHW"
+        }
+        # shape of out_3: [2, 3, 3, 3] which is different from out_1
+        pool2d(pooling_type+'Pool_test3', data_NCHW, pdpd_attrs)
+
+        # example 4:
+        # pool_padding = "VALID" (different from example 1)
+        pdpd_attrs = {
+                    #input=data_NCHW,
+                    'pool_size':[3,3],
+                    'pool_type' : pooling_type,
+                    'pool_stride' : [3,3],
+                    'pool_padding':"VALID",
+                    'global_pooling':False,
+                    'ceil_mode':False,
+                    'exclusive':True,
+                    'data_format':"NCHW"
+        }
+        # shape of out_4: [2, 3, 2, 2] which is different from out_1
+        pool2d(pooling_type+'Pool_test4', data_NCHW, pdpd_attrs)
+
+        # example 5:
+        # global_pooling = True (different from example 1)
+        # It will be set pool_size = [8,8] and pool_padding = [0,0] actually.
+        pdpd_attrs = {
+                    #input=data_NCHW,
+                    'pool_size':[3,3],
+                    'pool_type' : pooling_type,
+                    'pool_stride' : [3,3],
+                    'pool_padding':[2,1],
+                    'global_pooling':True,
+                    'ceil_mode':False,
+                    'exclusive':True,
+                    'data_format':"NCHW"
+        }
+        # shape of out_5: [2, 3, 1, 1] which is different from out_1
+        pool2d(pooling_type+'Pool_test5', data_NCHW, pdpd_attrs)
+
+        # example 6:
+        # data_format = "NHWC" (different from example 1)
+        pdpd_attrs = {
+                    #input=data_NHWC, # shape: [2, 8, 8, 3]
+                    'pool_size':[3,3],
+                    'pool_type' : pooling_type,
+                    'pool_stride' : [3,3],
+                    'pool_padding':[2,1],
+                    'global_pooling':False,
+                    'ceil_mode':False,
+                    'exclusive':True,
+                    'data_format':"NHWC"
+        }
+        # shape of out_6: [2, 4, 3, 3] which is different from out_1
+        pool2d(pooling_type+'Pool_test6', data_NHWC, pdpd_attrs)
+        #     
+
 
 if __name__ == "__main__":
     main()     
