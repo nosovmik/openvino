@@ -1,4 +1,4 @@
-
+import os
 import numpy as np
 import paddle as pdpd
 
@@ -42,10 +42,12 @@ def saveModel(name, exe, feedkeys:list, fetchlist:list, inputs:list, outputs:lis
     for i, input in enumerate(inputs):
         print("INPUT %s :" % (feedkeys[i]), input.shape, input.dtype)
         print_alike(input)
+        np.save(os.path.join("../models/"+name, "input{}".format(i)), input)
     print("\n")
     for i, output in enumerate(outputs):
         print("OUTPUT %s :" % (fetchlist[i]),output.shape, output.dtype)
-        print_alike(output)            
+        print_alike(output)
+        np.save(os.path.join("../models/"+name, "output{}".format(i)), output)     
 
     # composited model + scattered model
     pdpd.fluid.io.save_inference_model("../models/"+name, feedkeys, fetchlist, exe)
