@@ -1,4 +1,4 @@
-
+import os
 import numpy as np
 import paddle as pdpd
 
@@ -7,17 +7,15 @@ import paddle as pdpd
 def print_alike(arr):
     shape = arr.shape
     rank = len(shape)
-    print("shape: ", shape, "rank: %d" %(rank))
+    #print("shape: ", shape, "rank: %d" %(rank))
 
     #for idx, value in np.ndenumerate(arr):
     #    print(idx, value)
-    print(arr)
     
     def print_array(arr, end=' '):
         shape = arr.shape
         rank = len(arr.shape)
         if rank > 1:
-            #print("{")
             line = "{"
             for i in range(arr.shape[0]):
                 line += print_array(arr[i,:], end="},\n" if i < arr.shape[0]-1 else "}")
@@ -26,7 +24,7 @@ def print_alike(arr):
         else:
             line = "{"           
             for i in range(arr.shape[0]):              
-                line += str(arr[i])
+                line += "{:.2f}".format(arr[i]) #str(arr[i])
                 line += ", " if i < shape[0]-1 else ' '
             line += end
             #print(line)
@@ -44,10 +42,12 @@ def saveModel(name, exe, feedkeys:list, fetchlist:list, inputs:list, outputs:lis
     for i, input in enumerate(inputs):
         print("INPUT %s :" % (feedkeys[i]), input.shape, input.dtype)
         print_alike(input)
+        np.save(os.path.join("../models/"+name, "input{}".format(i)), input)
     print("\n")
     for i, output in enumerate(outputs):
         print("OUTPUT %s :" % (fetchlist[i]),output.shape, output.dtype)
-        print_alike(output)            
+        print_alike(output)
+        np.save(os.path.join("../models/"+name, "output{}".format(i)), output)     
 
     # composited model + scattered model
     pdpd.fluid.io.save_inference_model("../models/"+name, feedkeys, fetchlist, exe)
