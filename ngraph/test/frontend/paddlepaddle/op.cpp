@@ -3,6 +3,8 @@
 //
 
 #include "../shared/include/op.hpp"
+// library taken from https://github.com/llohse/libnpy
+#include "../shared/include/npy.hpp"
 
 using namespace ngraph;
 using namespace ngraph::frontend;
@@ -10,70 +12,60 @@ using namespace ngraph::frontend;
 static const std::string PDPD = "pdpd";
 static const std::string PATH_TO_MODELS = "/paddlepaddle/models/";
 
-using PDPDFrontendOpTest = FrontendOpTest;
+namespace fuzzyOp {
+    using PDPDFuzzyOpTest = FrontendOpTest;
+    using PDPDFuzzyOpTestParam = FrontendOpTestParam;                     
 
-static FrontendOpTestParam conv2d() {
-    FrontendOpTestParam res;
-    res.m_frontEndName = PDPD;
-    res.m_modelsPath =   PATH_TO_MODELS;
-    res.m_modelName =    "conv2d/";  //TODO: compact model/decomposited
+    static PDPDFuzzyOpTestParam fuzzy_op() {
+        PDPDFuzzyOpTestParam res;
+        res.m_frontEndName = PDPD;
+        res.m_modelsPath =   PATH_TO_MODELS;
+        res.m_modelName =    "avgPool_test1"; // TODO: to read models from config file.
+        
+        auto modelpath = std::string(TEST_FILES) + res.m_modelsPath + res.m_modelName;
 
-    //Inputs inputs;
-    // data (1, 3, 4, 4) input tensor
-    res.inputs.emplace_back(test::NDArray<float, 4>{{{{{0.f, 1.f, 2.f, 3.f, 4.f},
-                                                   {5.f, 6.f, 7.f, 8.f, 9.f},
-                                                   {10.f, 11.f, 12.f, 13.f, 14.f},
-                                                   {15.f, 16.f, 17.f, 18.f, 19.f},
-                                                   {20.f, 21.f, 22.f, 23.f, 24.f},
-                                                   {25.f, 26.f, 27.f, 28.f, 29.f},
-                                                   {30.f, 31.f, 32.f, 33.f, 34.f}}}}}
-                            .get_vector());
+        auto _load_from_npy = [&](std::string name) {
+            auto file_path = name + ".npy";
 
-    // (1, 5, 6, 6)
-    res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{12.f, 27.f, 24.f},
-                                                      {63.f, 108.f, 81.f},
-                                                      {123.f, 198.f, 141.f},
-                                                      {112.f, 177.f, 124.f}}}})
-                               .get_vector());
+            std::cout << "************load_from_npy (" << file_path << ")" << std::endl;
 
-    return res;
+            std::ifstream npy_file(file_path);
+            std::vector<unsigned long> npy_shape;
+            std::vector<float> npy_data;
+            if (npy_file.good())
+                npy::LoadArrayFromNumpy(file_path, npy_shape, npy_data);
+
+            return npy_data;
+        };  
+
+        auto npy_input = _load_from_npy(modelpath+"/input0");
+        auto npy_output = _load_from_npy(modelpath+"/output0");
+        if (npy_input.empty() || npy_output.empty()) {
+            throw std::runtime_error("failed to load test case input/output npy file!");
+        }
+
+        // TODO: to support more inputs/outputs
+        std::vector<float> data_input(npy_input.size());
+        std::copy_n(npy_input.data(), npy_input.size(), data_input.begin());
+
+        std::vector<float> data_output(npy_output.size());
+        std::copy_n(npy_output.data(), npy_output.size(), data_output.begin()); 
+
+        res.inputs.emplace_back(data_input);
+
+        res.expected_outputs.emplace_back(npy_output);                                
+
+        return res;
+    }
+
+    TEST_P(PDPDFuzzyOpTest, test_fuzzy) {
+        validateOp();
+    }
+
+    INSTANTIATE_TEST_CASE_P(FrontendOpTest, PDPDFuzzyOpTest,
+                            ::testing::Values(
+                                fuzzy_op()
+                            ),                        
+                            PDPDFuzzyOpTest::getTestCaseName);                                                 
+
 }
-
-static FrontendOpTestParam relu() {
-    FrontendOpTestParam res;
-    res.m_frontEndName = PDPD;
-    res.m_modelsPath =   PATH_TO_MODELS;
-    res.m_modelName =    "relu/";
-
-    //Inputs inputs;
-    // data (1, 1, 7, 5) input tensor
-    res.inputs.emplace_back(test::NDArray<float, 4>{{{{{0.f, 1.f, 2.f, 3.f, 4.f},
-                                                   {5.f, 6.f, 7.f, 8.f, 9.f},
-                                                   {10.f, 11.f, 12.f, 13.f, 14.f},
-                                                   {15.f, 16.f, 17.f, 18.f, 19.f},
-                                                   {20.f, 21.f, 22.f, 23.f, 24.f},
-                                                   {25.f, 26.f, 27.f, 28.f, 29.f},
-                                                   {30.f, 31.f, 32.f, 33.f, 34.f}}}}}
-                            .get_vector());
-
-    // filters (1, 1, 3, 3) aka convolution weights
-    res.inputs.emplace_back(
-        test::NDArray<float, 4>{{{{{1.f, 1.f, 1.f}, {1.f, 1.f, 1.f}, {1.f, 1.f, 1.f}}}}}
-            .get_vector());
-
-    // (1, 1, 4, 3)
-    res.expected_outputs.emplace_back(test::NDArray<float, 4>({{{{12.f, 27.f, 24.f},
-                                                      {63.f, 108.f, 81.f},
-                                                      {123.f, 198.f, 141.f},
-                                                      {112.f, 177.f, 124.f}}}})
-                               .get_vector());
-
-    return res;
-}
-
-INSTANTIATE_TEST_CASE_P(FrontendOpTest, FrontendOpTest,
-                        ::testing::Values(
-                            conv2d(),
-                            relu()
-                        ),                        
-                        FrontendOpTest::getTestCaseName);                                                 
