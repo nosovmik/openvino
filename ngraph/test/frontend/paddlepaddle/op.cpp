@@ -95,6 +95,7 @@ namespace fuzzyOp {
         }
 
         // TODO: to support more inputs/outputs
+        // TODO: to support different data type.
         std::vector<float> data_input(npy_input.size());
         std::copy_n(npy_input.data(), npy_input.size(), data_input.begin());
 
