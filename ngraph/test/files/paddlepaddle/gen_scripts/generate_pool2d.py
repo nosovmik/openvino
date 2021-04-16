@@ -35,6 +35,30 @@ def pool2d(name : str, x, attrs : dict):
 
     return outs[0]
 
+def adaptive_pool2d(name : str, x, attrs : dict):
+    import paddle as pdpd
+    pdpd.enable_static()
+    
+    with pdpd.static.program_guard(pdpd.static.Program(), pdpd.static.Program()):
+        node_x = pdpd.static.data(name='x', shape=x.shape, dtype=data_type)
+        out = pdpd.fluid.layers.adaptive_pool2d(
+                input=node_x,
+                pool_size=attrs['pool_size'],
+                pool_type=attrs['pool_type'],
+                require_index=attrs['require_index'])  
+
+        cpu = pdpd.static.cpu_places(1)
+        exe = pdpd.static.Executor(cpu[0])
+        # startup program will call initializer to initialize the parameters.
+        exe.run(pdpd.static.default_startup_program())
+
+        outs = exe.run(
+            feed={'x': x},
+            fetch_list=[out])             
+
+        saveModel(name, exe, feedkeys=['x'], fetchlist=[out], inputs=[x], outputs=[outs[0]])
+
+    return outs[0]
 
 def main():
     N, C, H, W = 2, 3, 4, 4
@@ -45,6 +69,7 @@ def main():
 
     pooling_types = ['max', 'avg']
 
+    # pool2d
     for i, pooling_type in enumerate(pooling_types):
         # example 1:
         # ceil_mode = False
@@ -143,7 +168,16 @@ def main():
         }
         # shape of out_6: [2, 4, 3, 3] which is different from out_1
         pool2d(pooling_type+'Pool_test6', data_NHWC, pdpd_attrs)
-        #     
+        #   
+
+    # adaptive_pool2d
+    for i, pooling_type in enumerate(pooling_types):
+        pdpd_attrs = {
+                'pool_size': [3,3],
+                'pool_type': pooling_type,
+                'require_index': False
+        }      
+        adaptive_pool2d(pooling_type+'AdaptivePool2D_test1', data_NCHW, pdpd_attrs)   
 
 
 if __name__ == "__main__":
