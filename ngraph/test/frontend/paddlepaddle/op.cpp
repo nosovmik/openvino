@@ -3,6 +3,7 @@
 //
 
 #include <regex>
+#include <fstream>
 
 #include "util/all_close.hpp"
 #include "util/all_close_f.hpp"
@@ -35,11 +36,35 @@ namespace fuzzyOp {
     // * decomposed model, which is a folder.
     // * composed model, which is a file with extension .pdmodel.
     */
-    static const std::vector<std::string> models {
-            std::string("maxPool_test1/"),
-            std::string("avgPool_test1/avgPool_test1.pdmodel"),
-    };
-                                               
+    bool ends_with(std::string const & value, std::string const & ending) {
+        if (ending.size() > value.size()) return false;
+        return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+    }
+
+    const std::string& trim_leadingspace(std::string& str)
+    {
+        auto it = str.begin();
+        for (; it != str.end() && isspace(*it); it++);                 
+        auto d = std::distance(str.begin(), it);
+        std::cout << d << std::endl;
+        return str.erase(0,d);
+    }    
+
+    std::vector<std::string> get_models(void) {
+        std::string models_csv = std::string(TEST_FILES) + PATH_TO_MODELS + "models.csv";
+        std::ifstream f(models_csv);
+        std::vector<std::string> models;
+        std::string line;
+        while (getline(f, line, ',')) {
+            auto line_trim = trim_leadingspace(line);
+            std::cout<< "line in csv: " << line_trim<<std::endl;            
+            models.emplace_back(line_trim);
+        }  
+        for (auto it = models.begin(); it != models.end(); it++)
+            std::cout<<*it<<std::endl; 
+        return models;
+    } 
+
     void run_fuzzy(std::shared_ptr<ngraph::Function> function, std::string& modelfile) {
         auto _load_from_npy = [&](std::string& file_path) {
             std::ifstream npy_file(file_path);
@@ -51,7 +76,9 @@ namespace fuzzyOp {
             return npy_data;
         };
 
-        auto _get_modelfolder = [&](std::string& modelfile) {
+        auto _get_modelfolder = [&](std::string& modelfile) { 
+            if (!ends_with(modelfile, ".pdmodel")) return modelfile;
+
             size_t found = modelfile.find_last_of("/\\");
 
             return  modelfile.substr(0,found);             
@@ -64,7 +91,7 @@ namespace fuzzyOp {
         auto npy_input = _load_from_npy(input_path);
         auto npy_output = _load_from_npy(output_path);
         if (npy_input.empty() || npy_output.empty()) {
-            throw std::runtime_error("failed to load test case input/output npy file!");
+            throw std::runtime_error("failed to load input/output npy for test case. Tried " + input_path);
         }
 
         // TODO: to support more inputs/outputs
@@ -100,7 +127,9 @@ namespace fuzzyOp {
                         ::testing::Combine(
                             ::testing::Values(PDPD),
                             ::testing::Values(PATH_TO_MODELS),
-                            ::testing::ValuesIn(models)),                 
+                            //::testing::ValuesIn({std::string("maxPool_test1"),
+                            //                    std::string("avgPool_test1/avgPool_test1.pdmodel")})), 
+                            ::testing::ValuesIn(get_models())),                                                                
                             PDPDFuzzyOpTest::getTestCaseName);                                                 
 
 }
