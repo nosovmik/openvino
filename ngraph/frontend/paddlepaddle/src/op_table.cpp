@@ -30,11 +30,8 @@
 #include "op/concat.hpp"
 #include "op/cast.hpp"
 #include "op/softmax.hpp"
-<<<<<<< HEAD
 #include "op/split.h"
-=======
 #include "op/transpose2.hpp"
->>>>>>> 46419e77a... Add transpose2 to op_table
 
 #include "op_table.hpp"
 
