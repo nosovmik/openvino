@@ -87,7 +87,9 @@ if (NGRAPH_ONNX_IMPORT_ENABLE)
     target_link_libraries(_${PROJECT_NAME} PRIVATE ngraph::onnx_importer)
 endif()
 
-target_link_libraries(_${PROJECT_NAME} PRIVATE ngraph::ngraph ngraph::frontend_manager)
+if (NGRAPH_PDPD_FRONTEND_ENABLE)
+    target_link_libraries(_${PROJECT_NAME} PRIVATE ngraph::ngraph ngraph::frontend_manager)
+endif()
 
 if (TARGET ngraph::onnx_importer)
     add_dependencies(_${PROJECT_NAME} ngraph::onnx_importer)
