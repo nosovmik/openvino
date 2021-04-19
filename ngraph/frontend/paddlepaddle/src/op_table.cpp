@@ -66,7 +66,7 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"split", op::split},
             {"max_pool2d_with_index", op::pool2d}, //adaptive_max_pool2d
             {"softmax", op::softmax},
-            {"transpose2", op::transpose2}
+            {"transpose2", op::transpose2},
             {"yolo_box", op::yolo_box},
             {"multiclass_nms3", op::multiclass_nms}
     };
