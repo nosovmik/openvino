@@ -17,7 +17,6 @@
 #include <ngraph/opsets/opset6.hpp>
 #include "rnn.hpp"
 #include "lstm.hpp"
-#include "utility.hpp"
 
 namespace ngraph {
     namespace frontend {

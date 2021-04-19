@@ -36,7 +36,8 @@
 #include "op/multiclass_nms.hpp"
 #include "op/rnn.hpp"
 #include "op/fill_constant.hpp"
-#include "op/transpose2.hpp"
+#include "op/uniform_random.hpp"
+#include "op/assign_value.hpp"
 
 #include "op_table.hpp"
 
@@ -64,6 +65,9 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"scale", op::scale},
             {"leaky_relu", op::leaky_relu},
             {"nearest_interp_v2", op::nearest_interp_v2},
+            {"bilinear_interp_v2", op::bilinear_interp_v2},
+            {"nearest_interp", op::nearest_interp_v2},
+            {"bilinear_interp", op::bilinear_interp_v2},
             {"concat", op::concat},
             {"cast", op::cast},
             {"split", op::split},
@@ -71,10 +75,15 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"softmax", op::softmax},
             {"transpose2", op::transpose2},
             {"yolo_box", op::yolo_box},
-            {"multiclass_nms3", op::multiclass_nms}
+            {"multiclass_nms3", op::multiclass_nms},
             {"softmax", op::softmax},
             {"rnn", op::rnn},
-            {"fill_constant", op::fill_constant}
+            {"fill_constant", op::fill_constant},
+            {"transpose2", op::transpose2},
+            {"bmm", op::matmul},
+            {"depthwise_conv2d", op::conv2d},
+            {"uniform_random", op::uniform_random},
+            {"assign_value", op::assign_value}
     };
 };
 

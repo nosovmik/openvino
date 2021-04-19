@@ -14,15 +14,19 @@
 // limitations under the License.
 //*****************************************************************************
 
-#pragma once
-#include "node_context.hpp"
+#include <ngraph/opsets/opset6.hpp>
+#include "uniform_random.hpp"
 
 namespace ngraph {
-namespace frontend {
-namespace pdpd {
-namespace op {
+    namespace frontend {
+        namespace pdpd {
+            namespace op {
 
-OutputVector nearest_interp_v2 (const NodeContext& node_context);
-OutputVector bilinear_interp_v2 (const NodeContext& node_context);
+                OutputVector uniform_random (const NodeContext& node) {
+                    return {std::make_shared<opset6::Parameter>(element::f32, PartialShape{Dimension::dynamic(), Dimension::dynamic(), Dimension::dynamic(), Dimension::dynamic()})};
+                }
 
-}}}}
+            }
+        }
+    }
+}

@@ -16,7 +16,6 @@
 
 #include <ngraph/opsets/opset6.hpp>
 #include "lstm.hpp"
-#include "utility.hpp"
 #include "ngraph/builder/reshape.hpp"
 #include "ngraph/builder/split.hpp"
 
