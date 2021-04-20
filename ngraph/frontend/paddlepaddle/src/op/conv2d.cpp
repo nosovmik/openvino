@@ -15,6 +15,7 @@
 //*****************************************************************************
 
 #include <ngraph/opsets/opset6.hpp>
+#include <ngraph/builder/reshape.hpp>
 #include "conv2d.hpp"
 
 namespace ngraph {
@@ -90,24 +91,43 @@ std::pair<CoordinateDiff, CoordinateDiff> get_pads(const NodeContext& node)
 
 OutputVector conv2d (const NodeContext& node) {
     auto data = node.get_ng_input("Input");
-    auto filter = node.get_ng_input("Filter");
+    auto filters = node.get_ng_input("Filter");
     // TODO: resolve padding according to spec
-    auto strides = node.get_attribute<std::vector<int32_t>>("strides");
-    auto dilations = node.get_attribute<std::vector<int32_t>>("dilations");
-    auto auto_pad_type = get_auto_pad(node);
-    auto paddings = get_pads(node);
-    auto pads_begin = paddings.first;
-    auto pads_end = paddings.second;
+    const auto strides = node.get_attribute<std::vector<int32_t>>("strides");
+    const auto dilations = node.get_attribute<std::vector<int32_t>>("dilations");
+    const auto auto_pad_type = get_auto_pad(node);
+    const auto paddings = get_pads(node);
+    const auto pads_begin = paddings.first;
+    const auto pads_end = paddings.second;
+    const auto groups = node.get_attribute<int32_t>("groups");
 
+    if (groups > 1) {
+        auto filters_shape = filters.get_shape();
+        filters_shape.at(0) = filters_shape.at(0) / groups;
+        filters_shape.insert(filters_shape.begin(), groups);
 
-    return {std::make_shared<ngraph::opset6::Convolution>(
-        data,
-        filter,
-        ngraph::Strides(strides.begin(), strides.end()),
-        pads_begin,
-        pads_end,
-        ngraph::Strides(dilations.begin(), dilations.end()),
-        auto_pad_type)};
+        const auto reshaped_filters =
+                ngraph::builder::opset1::reshape(filters, filters_shape);
+        return {std::make_shared<opset6::GroupConvolution>(
+                data,
+                reshaped_filters,
+                ngraph::Strides(strides.begin(), strides.end()),
+                pads_begin,
+                pads_end,
+                ngraph::Strides(dilations.begin(), dilations.end()),
+                auto_pad_type)};
+    }
+    else
+    {
+        return {std::make_shared<opset6::Convolution>(
+                    data,
+                    filters,
+                    ngraph::Strides(strides.begin(), strides.end()),
+                    pads_begin,
+                    pads_end,
+                    ngraph::Strides(dilations.begin(), dilations.end()),
+                    auto_pad_type)};
+    }
 }
 
 }}}}
