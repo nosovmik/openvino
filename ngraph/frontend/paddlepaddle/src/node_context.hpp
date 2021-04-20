@@ -34,6 +34,8 @@ public:
 
     NodeContext (const DecoderPDPDProto& _node, NamedInputs& _name_map) : node(_node), name_map(_name_map) {}
 
+    std::string get_op_type() const { return node.get_type(); }
+
     /// Detects if there is at least one input attached with a given name
     bool has_ng_input (const std::string& name) const
     {
