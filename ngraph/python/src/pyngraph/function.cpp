@@ -37,6 +37,7 @@ void regclass_pyngraph_Function(py::module m)
     function.def("get_friendly_name", &ngraph::Function::get_friendly_name);
     function.def("set_friendly_name", &ngraph::Function::set_friendly_name);
     function.def("is_dynamic", &ngraph::Function::is_dynamic);
+    function.def("validate_nodes_and_infer_types", &ngraph::Function::validate_nodes_and_infer_types);
     function.def("__repr__", [](const ngraph::Function& self) {
         std::string class_name = py::cast(self).get_type().attr("__name__").cast<std::string>();
         std::stringstream shapes_ss;
