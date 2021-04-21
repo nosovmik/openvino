@@ -66,6 +66,7 @@ def moc_pipeline(argv: argparse.Namespace):
     nGraphFunction = fe.convert(inputModel)
 
     # Set batch size
+    # TODO: consider alternatives like exposing nGraph transformatons or use IENetwork.reshape to set batch size
     if argv.batch > 0:
         log.debug("Setting batch size to {}".format(argv.batch))
         for par in nGraphFunction.get_parameters():
