@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 #include "multiclass_nms.hpp"
 
 namespace ngraph {
@@ -19,11 +19,11 @@ NamedOutputs multiclass_nms (const NodeContext& node) {
     auto max_output_boxes_per_class = node.get_attribute<int>("nms_top_k");
 
     //TODO: dtype, scaler/vector attr, and more strick attributes check
-    auto node_max_output_boxes_per_class = ngraph::opset6::Constant::create<int>(element::i32, Shape{1}, {max_output_boxes_per_class}); 
-    auto node_iou_threshold =  ngraph::opset6::Constant::create<float>(element::f32, Shape{1}, {iou_threshold}); 
-    auto node_score_threshold = ngraph::opset6::Constant::create<float>(element::f32, Shape{1}, {score_threshold});     
+    auto node_max_output_boxes_per_class = ngraph::opset7::Constant::create<int>(element::i32, Shape{1}, {max_output_boxes_per_class});
+    auto node_iou_threshold =  ngraph::opset7::Constant::create<float>(element::f32, Shape{1}, {iou_threshold});
+    auto node_score_threshold = ngraph::opset7::Constant::create<float>(element::f32, Shape{1}, {score_threshold});
 
-    return node.default_single_output_mapping({std::make_shared<ngraph::opset6::NonMaxSuppression>(bboxes, scores,
+    return node.default_single_output_mapping({std::make_shared<ngraph::opset7::NonMaxSuppression>(bboxes, scores,
                                     node_max_output_boxes_per_class,
                                     node_iou_threshold,
                                     node_score_threshold)}, {"Out"});

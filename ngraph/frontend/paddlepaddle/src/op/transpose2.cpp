@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 #include "transpose2.hpp"
 
 namespace ngraph {
@@ -21,8 +21,8 @@ NamedOutputs transpose2 (const NodeContext& node) {
 
     PDPD_ASSERT(perm.size() == rank, "transpose2: axis size must equal to data rank!");
 
-    auto input_order = ngraph::opset6::Constant::create(ngraph::element::i64, {rank}, perm);
-    return node.default_single_output_mapping({std::make_shared<ngraph::opset6::Transpose>(data, input_order)}, {"Out"});
+    auto input_order = ngraph::opset7::Constant::create(ngraph::element::i64, {rank}, perm);
+    return node.default_single_output_mapping({std::make_shared<ngraph::opset7::Transpose>(data, input_order)}, {"Out"});
 }
 
 }}}}

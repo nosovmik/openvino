@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 #include "conv2d.hpp"
 
 namespace ngraph {
@@ -17,7 +17,7 @@ NamedOutputs conv2d (const NodeContext& node) {
     auto strides = node.get_attribute<std::vector<int32_t>>("strides");
     auto paddings = node.get_attribute<std::vector<int32_t>>("paddings");
     auto dilations = node.get_attribute<std::vector<int32_t>>("dilations");
-    return node.default_single_output_mapping({std::make_shared<ngraph::opset6::Convolution>(
+    return node.default_single_output_mapping({std::make_shared<ngraph::opset7::Convolution>(
         data,
         filter,
         ngraph::Strides(strides.begin(), strides.end()),

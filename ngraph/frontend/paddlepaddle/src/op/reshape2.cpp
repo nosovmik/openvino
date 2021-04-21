@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 #include "reshape2.hpp"
 #include <paddlepaddle_frontend/utility.hpp>
 
@@ -16,8 +16,8 @@ NamedOutputs reshape2(const NodeContext& node) {
     if (!node.has_ng_input("Shape") && !node.has_ng_input("ShapeTensor"))
     {
         auto shape_attr = node.get_attribute<std::vector<int32_t>>("shape");
-        auto shape_node = ngraph::opset6::Constant::create(ngraph::element::i32, {shape_attr.size()}, shape_attr);
-        return node.default_single_output_mapping({std::make_shared<ngraph::opset6::Reshape>(data, shape_node, true)}, {"Out"});
+        auto shape_node = ngraph::opset7::Constant::create(ngraph::element::i32, {shape_attr.size()}, shape_attr);
+        return node.default_single_output_mapping({std::make_shared<ngraph::opset7::Reshape>(data, shape_node, true)}, {"Out"});
     } else {
         NOT_IMPLEMENTED("reshape2 with shape as input");
     }

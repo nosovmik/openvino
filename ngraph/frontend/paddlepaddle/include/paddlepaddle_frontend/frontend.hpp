@@ -7,28 +7,40 @@
 #include <frontend_manager/frontend_manager.hpp>
 
 #include "model.hpp"
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 
 namespace ngraph {
 namespace frontend {
 
 class NGRAPH_API FrontEndPDPD : public FrontEnd
 {
-    static std::shared_ptr<Function> convert_model(const std::shared_ptr<InputModelPDPD>& model);
-    static std::shared_ptr<opset6::Constant> read_tensor(const std::shared_ptr<TensorPlacePDPD>& place,
-                                                  const std::shared_ptr<InputModelPDPD>& model);
 public:
 
-    FrontEndPDPD ()
-    {
-    }
+    FrontEndPDPD () = default;
 
-    virtual InputModel::Ptr loadFromFile (const std::string& path) const override
+    InputModel::Ptr loadFromFile (const std::string& path) const override
     {
         return std::make_shared<InputModelPDPD>(path);
     }
 
-    virtual std::shared_ptr<Function> convert (InputModel::Ptr model) const override;
+    std::shared_ptr<Function> convert (InputModel::Ptr model) const override;
+
+private:
+    static std::shared_ptr<Function> convert_model(const std::shared_ptr<InputModelPDPD>& model);
+    static std::shared_ptr<opset7::Constant> read_tensor(const std::shared_ptr<TensorPlacePDPD>& place,
+                                                         const std::shared_ptr<InputModelPDPD>& model);
+
+    static void createConstants(const std::shared_ptr<InputModelPDPD>& model,
+                                std::map<std::string, Output<Node>>& node_dict);
+
+    static ParameterVector createParameters(const std::shared_ptr<InputModelPDPD>& model,
+                                            std::map<std::string, Output<Node>>& node_dict);
+
+    static void createOperations(const std::shared_ptr<InputModelPDPD>& model,
+                                 std::map<std::string, Output<Node>>& node_dict);
+
+    static ResultVector createResults(const std::shared_ptr<InputModelPDPD>& model,
+                                      std::map<std::string, Output<Node>>& node_dict);
 };
 
 } // namespace frontend

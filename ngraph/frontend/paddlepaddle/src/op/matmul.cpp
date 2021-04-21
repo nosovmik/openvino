@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 #include "matmul.hpp"
 #include <paddlepaddle_frontend/utility.hpp>
 
@@ -17,9 +17,9 @@ namespace op {
         auto alpha = node.get_attribute<float>("alpha");
         auto transpose_a = node.get_attribute<bool>("transpose_a");
         auto transpose_b = node.get_attribute<bool>("transpose_b");
-        auto mm = std::make_shared<ngraph::opset6::MatMul>(x, y, transpose_a, transpose_b);
-        auto alpha_node = ngraph::opset6::Constant::create(ngraph::element::f32, {1}, {alpha});
-        return node.default_single_output_mapping({std::make_shared<ngraph::opset6::Multiply>(mm, alpha_node)}, {"Out"});
+        auto mm = std::make_shared<ngraph::opset7::MatMul>(x, y, transpose_a, transpose_b);
+        auto alpha_node = ngraph::opset7::Constant::create(ngraph::element::f32, {1}, {alpha});
+        return node.default_single_output_mapping({std::make_shared<ngraph::opset7::Multiply>(mm, alpha_node)}, {"Out"});
     }
 
 } // namespace op

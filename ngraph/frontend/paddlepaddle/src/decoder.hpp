@@ -19,7 +19,7 @@
 #include <paddlepaddle_frontend/frontend.hpp>
 
 #include <ngraph/ngraph.hpp>
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 
 namespace ngraph {
 namespace frontend {

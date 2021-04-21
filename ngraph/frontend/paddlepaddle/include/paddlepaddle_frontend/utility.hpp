@@ -18,5 +18,8 @@ inline void NOT_IMPLEMENTED(const std::string& name = "Unspecified")
     throw std::runtime_error(name + " is not implemented");
 }
 
+
+const char nodes_port_cnt_msg[] = "The number of output tensors must be equal to the number of outputs of the ngraph "
+                                  "node." ;
 } // namespace frontend
 } // namespace ngraph
