@@ -1,20 +1,8 @@
-//*****************************************************************************
-// Copyright 2017-2021 Intel Corporation
+// Copyright (C) 2021 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//*****************************************************************************
 
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 #include "pool2d.hpp"
 
 namespace ngraph {
@@ -35,7 +23,7 @@ NamedOutputs pool2d (const NodeContext& node) {
         auto rounding_type = node.get_attribute<bool>("ceil_mode")
                                  ? ngraph::op::RoundingType::CEIL
                                  : ngraph::op::RoundingType::FLOOR;
-        return node.default_single_output_mapping({std::make_shared<ngraph::opset6::MaxPool>(
+        return node.default_single_output_mapping({std::make_shared<ngraph::opset7::MaxPool>(
                     data,
                     ngraph::Strides(strides.begin(), strides.end()),
                     ngraph::Shape(paddings.begin(), paddings.end()),
@@ -49,8 +37,8 @@ NamedOutputs pool2d (const NodeContext& node) {
                                                    [](int32_t s) { return s == 1; })))
     {
         // TODO : resolve axes according to rank
-        auto axes = ngraph::opset6::Constant::create(ngraph::element::i64, {2}, {2, 3});
-        return node.default_single_output_mapping({std::make_shared<ngraph::opset6::ReduceMean>(data, axes, true)}, {"Out"});
+        auto axes = ngraph::opset7::Constant::create(ngraph::element::i64, {2}, {2, 3});
+        return node.default_single_output_mapping({std::make_shared<ngraph::opset7::ReduceMean>(data, axes, true)}, {"Out"});
     } else {
         throw std::runtime_error("Unsupported pooling type");
     }

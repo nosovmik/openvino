@@ -1,20 +1,8 @@
-//*****************************************************************************
-// Copyright 2017-2021 Intel Corporation
+// Copyright (C) 2021 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//*****************************************************************************
 
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 #include "matmul.hpp"
 #include <paddlepaddle_frontend/utility.hpp>
 
@@ -29,9 +17,9 @@ namespace op {
         auto alpha = node.get_attribute<float>("alpha");
         auto transpose_a = node.get_attribute<bool>("transpose_a");
         auto transpose_b = node.get_attribute<bool>("transpose_b");
-        auto mm = std::make_shared<ngraph::opset6::MatMul>(x, y, transpose_a, transpose_b);
-        auto alpha_node = ngraph::opset6::Constant::create(ngraph::element::f32, {1}, {alpha});
-        return node.default_single_output_mapping({std::make_shared<ngraph::opset6::Multiply>(mm, alpha_node)}, {"Out"});
+        auto mm = std::make_shared<ngraph::opset7::MatMul>(x, y, transpose_a, transpose_b);
+        auto alpha_node = ngraph::opset7::Constant::create(ngraph::element::f32, {1}, {alpha});
+        return node.default_single_output_mapping({std::make_shared<ngraph::opset7::Multiply>(mm, alpha_node)}, {"Out"});
     }
 
 } // namespace op

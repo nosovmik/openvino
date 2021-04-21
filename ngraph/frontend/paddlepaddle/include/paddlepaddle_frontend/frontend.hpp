@@ -1,46 +1,46 @@
-//*****************************************************************************
-// Copyright 2017-2021 Intel Corporation
+// Copyright (C) 2021 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//*****************************************************************************
 
 #pragma once
 
 #include <frontend_manager/frontend_manager.hpp>
 
 #include "model.hpp"
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 
 namespace ngraph {
 namespace frontend {
 
 class NGRAPH_API FrontEndPDPD : public FrontEnd
 {
-    static std::shared_ptr<Function> convert_model(const std::shared_ptr<InputModelPDPD>& model);
-    static std::shared_ptr<opset6::Constant> read_tensor(const std::shared_ptr<TensorPlacePDPD>& place,
-                                                  const std::shared_ptr<InputModelPDPD>& model);
 public:
 
-    FrontEndPDPD ()
-    {
-    }
+    FrontEndPDPD () = default;
 
-    virtual InputModel::Ptr loadFromFile (const std::string& path) const override
+    InputModel::Ptr loadFromFile (const std::string& path) const override
     {
         return std::make_shared<InputModelPDPD>(path);
     }
 
-    virtual std::shared_ptr<Function> convert (InputModel::Ptr model) const override;
+    std::shared_ptr<Function> convert (InputModel::Ptr model) const override;
+
+private:
+    static std::shared_ptr<Function> convert_model(const std::shared_ptr<InputModelPDPD>& model);
+    static std::shared_ptr<opset7::Constant> read_tensor(const std::shared_ptr<TensorPlacePDPD>& place,
+                                                         const std::shared_ptr<InputModelPDPD>& model);
+
+    static void createConstants(const std::shared_ptr<InputModelPDPD>& model,
+                                std::map<std::string, Output<Node>>& node_dict);
+
+    static ParameterVector createParameters(const std::shared_ptr<InputModelPDPD>& model,
+                                            std::map<std::string, Output<Node>>& node_dict);
+
+    static void createOperations(const std::shared_ptr<InputModelPDPD>& model,
+                                 std::map<std::string, Output<Node>>& node_dict);
+
+    static ResultVector createResults(const std::shared_ptr<InputModelPDPD>& model,
+                                      std::map<std::string, Output<Node>>& node_dict);
 };
 
 } // namespace frontend

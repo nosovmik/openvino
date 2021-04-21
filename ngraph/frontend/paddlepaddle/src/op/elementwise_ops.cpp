@@ -1,21 +1,9 @@
-//*****************************************************************************
-// Copyright 2017-2021 Intel Corporation
+// Copyright (C) 2021 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//*****************************************************************************
 #include <map>
 
-#include <ngraph/opsets/opset6.hpp>
+#include <ngraph/opsets/opset7.hpp>
 #include "elementwise_ops.hpp"
 
 namespace ngraph {
@@ -48,39 +36,39 @@ NamedOutputs elementwise_ops (const NodeContext& node) {
         for(auto it = y_shape.begin(); it != y_shape.end(); ++i,++it)
             broadcast_shape[axis+i] = (*it).get_length();
 
-        auto reshape_node = ngraph::opset6::Constant::create(ngraph::element::i64, ngraph::Shape{broadcast_shape.size()}, broadcast_shape);    
-        auto y_node = std::make_shared<ngraph::opset6::Reshape>(y, reshape_node, false);    
+        auto reshape_node = ngraph::opset7::Constant::create(ngraph::element::i64, ngraph::Shape{broadcast_shape.size()}, broadcast_shape);
+        auto y_node = std::make_shared<ngraph::opset7::Reshape>(y, reshape_node, false);
         return node.default_single_output_mapping({std::make_shared<T>(x, y_node)}, {"Out"});
     }   
 }
 
 //
 NamedOutputs elementwise_add (const NodeContext& node_context) {
-    return elementwise_ops<ngraph::opset6::Add>(node_context);
+    return elementwise_ops<ngraph::opset7::Add>(node_context);
 }
 
 NamedOutputs elementwise_sub (const NodeContext& node_context) {
-    return elementwise_ops<ngraph::opset6::Subtract>(node_context);
+    return elementwise_ops<ngraph::opset7::Subtract>(node_context);
 }
 
 NamedOutputs elementwise_mul (const NodeContext& node_context) {
-    return elementwise_ops<ngraph::opset6::Multiply>(node_context);
+    return elementwise_ops<ngraph::opset7::Multiply>(node_context);
 }
 
 NamedOutputs elementwise_div (const NodeContext& node_context) {
-    return elementwise_ops<ngraph::opset6::Divide>(node_context);
+    return elementwise_ops<ngraph::opset7::Divide>(node_context);
 }
 
 NamedOutputs elementwise_min (const NodeContext& node_context) {
-    return elementwise_ops<ngraph::opset6::Minimum>(node_context);
+    return elementwise_ops<ngraph::opset7::Minimum>(node_context);
 }
 
 NamedOutputs elementwise_max (const NodeContext& node_context) {
-    return elementwise_ops<ngraph::opset6::Maximum>(node_context);
+    return elementwise_ops<ngraph::opset7::Maximum>(node_context);
 }
 
 NamedOutputs elementwise_pow (const NodeContext& node_context) {
-    return elementwise_ops<ngraph::opset6::Power>(node_context);
+    return elementwise_ops<ngraph::opset7::Power>(node_context);
 }
 
 }}}}
