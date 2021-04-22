@@ -28,8 +28,7 @@ public:
     void setPartialShape (Place::Ptr place, const ngraph::PartialShape&);
     void setElementType (Place::Ptr place, const ngraph::element::Type&);
     
-    template<typename T>
-    std::vector<T> readWeight(const std::string& name, int64_t tensor_length);
+    std::vector<uint8_t> readWeight(const std::string& name, int64_t len);
     std::vector<std::shared_ptr<OpPlacePDPD>> getOpPlaces(int i) const { return m_op_places_blocks[i]; }
     std::map<std::string, std::shared_ptr<TensorPlacePDPD>> getVarPlaces(int i) const { return m_var_places_blocks[i]; }
     size_t getBlockNumber() const { return m_op_places_blocks.size(); }
@@ -58,10 +57,7 @@ InputModelPDPD::InputModelPDPDImpl::InputModelPDPDImpl(const std::string& _path,
         m_weights_composed = true;
         auto weights_file = m_path.replace(m_path.size() - ext.size(), ext.size(), ".pdiparams");
         m_weights_stream = std::unique_ptr<std::ifstream>(new std::ifstream(weights_file, std::ios::binary));
-        if (!m_weights_stream || !m_weights_stream->is_open())
-        {
-            std::cerr << "Model file cannot be opened" << std::endl;
-        }
+        PDPD_ASSERT(m_weights_stream && m_weights_stream->is_open(), "Model file cannot be opened");
     } else {
         m_weights_composed = false;
         model_file += "/__model__";
@@ -138,9 +134,8 @@ InputModelPDPD::InputModelPDPDImpl::InputModelPDPDImpl(const std::string& _path,
     }
 }
 
-template<typename T>
-std::vector<T> InputModelPDPD::InputModelPDPDImpl::readWeight(const std::string& name, int64_t tensor_length) {
-    std::vector<T> tensor_data(tensor_length, 0);
+std::vector<uint8_t> InputModelPDPD::InputModelPDPDImpl::readWeight(const std::string& name, int64_t len) {
+    std::vector<uint8_t> tensor_data(len);
 
     std::unique_ptr<std::ifstream> is;
     std::ifstream* stream_ptr;
@@ -148,20 +143,16 @@ std::vector<T> InputModelPDPD::InputModelPDPDImpl::readWeight(const std::string&
         stream_ptr = m_weights_stream.get();
     } else {
         is = std::unique_ptr<std::ifstream>(new std::ifstream(m_path + "/" + name, std::ios::in | std::ifstream::binary));
-        if (!is || !is->is_open())
-        {
-            std::cout << "File not opened" << std::endl;
-        }
+        PDPD_ASSERT(is && is->is_open(), "Cannot open file for constant value.");
         stream_ptr = is.get();
     }
-    // TODO: validate that this works for types other than FP32
-    std::vector<char> header(16, 0);
+    std::vector<char> header(16);
     stream_ptr->read(&header[0], 16);
     uint32_t dims_len = 0;
     stream_ptr->read(reinterpret_cast<char*>(&dims_len), 4);
-    std::vector<char> dims_struct(dims_len, 0);
+    std::vector<char> dims_struct(dims_len);
     stream_ptr->read(&dims_struct[0], dims_len);
-    stream_ptr->read(reinterpret_cast<char*>(&tensor_data[0]), tensor_length * sizeof(T));
+    stream_ptr->read(reinterpret_cast<char*>(&tensor_data[0]), len);
     return tensor_data;
 }
 
@@ -182,13 +173,33 @@ Place::Ptr InputModelPDPD::InputModelPDPDImpl::getPlaceByTensorName (const std::
 }
 
 void InputModelPDPD::InputModelPDPDImpl::overrideAllInputs (const std::vector<Place::Ptr>& inputs) {
-    // TODO: resolve for different kind of places
-    m_inputs = inputs;
+    m_inputs.clear();
+    for (const auto& inp : inputs) {
+        if (auto var_place = std::dynamic_pointer_cast<TensorPlacePDPD>(inp)) {
+            m_inputs.push_back(var_place);
+        } else if (auto in_port_place = std::dynamic_pointer_cast<InPortPlacePDPD>(inp)) {
+            m_inputs.push_back(in_port_place->getSourceTensorPDPD());
+        } else if (auto out_port_place = std::dynamic_pointer_cast<OutPortPlacePDPD>(inp)) {
+            m_inputs.push_back(out_port_place->getTargetTensorPDPD());
+        } else {
+            PDPD_THROW("Only tensors and ports can be used to override inputs.");
+        }
+    }
 }
 
 void InputModelPDPD::InputModelPDPDImpl::overrideAllOutputs (const std::vector<Place::Ptr>& outputs) {
-    // TODO: resolve for different kind of places
-    m_outputs = outputs;
+    m_outputs.clear();
+    for (const auto& outp : outputs) {
+        if (auto var_place = std::dynamic_pointer_cast<TensorPlacePDPD>(outp)) {
+            m_outputs.push_back(var_place);
+        } else if (auto in_port_place = std::dynamic_pointer_cast<InPortPlacePDPD>(outp)) {
+            m_outputs.push_back(in_port_place->getSourceTensorPDPD());
+        } else if (auto out_port_place = std::dynamic_pointer_cast<OutPortPlacePDPD>(outp)) {
+            m_outputs.push_back(out_port_place->getTargetTensorPDPD());
+        } else {
+            PDPD_THROW("Only tensors and ports can be used to override outputs.");
+        }
+    }
 }
 
 void InputModelPDPD::InputModelPDPDImpl::extractSubgraph (const std::vector<Place::Ptr>& inputs, const std::vector<Place::Ptr>& outputs) {
@@ -201,25 +212,33 @@ void InputModelPDPD::InputModelPDPDImpl::setDefaultShape (Place::Ptr place, cons
 }
 
 void InputModelPDPD::InputModelPDPDImpl::setPartialShape (Place::Ptr place, const ngraph::PartialShape& p_shape) {
-    auto var_place = std::dynamic_pointer_cast<TensorPlacePDPD>(place);
-    if (var_place) {
+    if (auto var_place = std::dynamic_pointer_cast<TensorPlacePDPD>(place)) {
         var_place->setPartialShape(p_shape);
+    } else if (auto in_port_place = std::dynamic_pointer_cast<InPortPlacePDPD>(place)) {
+        in_port_place->getSourceTensorPDPD()->setPartialShape(p_shape);
+    } else if (auto out_port_place = std::dynamic_pointer_cast<OutPortPlacePDPD>(place)) {
+        out_port_place->getTargetTensorPDPD()->setPartialShape(p_shape);
+    } else {
+        PDPD_THROW("Cannot set shape for this place.");
     }
-    // TODO: resolve for port places
 }
 
 void InputModelPDPD::InputModelPDPDImpl::setElementType (Place::Ptr place, const ngraph::element::Type& type) {
-    auto var_place = std::dynamic_pointer_cast<TensorPlacePDPD>(place);
-    if (var_place) {
+    if (auto var_place = std::dynamic_pointer_cast<TensorPlacePDPD>(place)) {
         var_place->setElementType(type);
+    } else if (auto in_port_place = std::dynamic_pointer_cast<InPortPlacePDPD>(place)) {
+        in_port_place->getSourceTensorPDPD()->setElementType(type);
+    } else if (auto out_port_place = std::dynamic_pointer_cast<OutPortPlacePDPD>(place)) {
+        out_port_place->getTargetTensorPDPD()->setElementType(type);
+    } else {
+        PDPD_THROW("Cannot set type for this place.");
     }
-    // TODO: resolve for port places
 }
 
 InputModelPDPD::InputModelPDPD (const std::string& _path) : _impl{std::make_shared<InputModelPDPDImpl>(_path, *this)} {}
 
-std::vector<float> InputModelPDPD::readWeight(const std::string& name, int64_t tensor_length) {
-    return _impl->readWeight<float>(name, tensor_length);
+std::vector<uint8_t> InputModelPDPD::readWeight(const std::string& name, int64_t len) {
+    return _impl->readWeight(name, len);
 }
 
 std::vector<std::shared_ptr<OpPlacePDPD>> InputModelPDPD::getOpPlaces(int i) const {
