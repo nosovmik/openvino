@@ -88,6 +88,35 @@ static void visualizer(std::shared_ptr<ngraph::Function> function, std::string p
         network.serialize(path+".xml", path+".bin");    
 }
 
+std::string get_npy_dtype(std::string& filename) {
+    std::ifstream stream(filename, std::ifstream::binary);
+    if(!stream) {
+        throw std::runtime_error("io error: failed to open a file.");
+    }
+
+    std::string header = npy::read_header(stream);
+
+    // parse header
+    bool fortran_order;
+    std::string typestr;
+    std::vector<unsigned long>shape;
+
+    npy::parse_header(header, typestr, fortran_order, shape);
+    return typestr;       
+}
+
+template <typename T>
+void load_from_npy(std::string& file_path, std::vector<T> &npy_data) {
+    std::ifstream npy_file(file_path);
+    std::vector<unsigned long> npy_shape;    
+    if (npy_file.good())
+        npy::LoadArrayFromNumpy(file_path, npy_shape, npy_data);
+
+    if (npy_data.empty()) {
+        throw std::runtime_error("failed to load npy for test case "+file_path);
+    }        
+}
+
 namespace fuzzyOp {
     using PDPDFuzzyOpTest = FrontEndBasicTest; 
     using PDPDFuzzyOpTestParam = std::tuple<std::string,  // FrontEnd name
@@ -95,43 +124,7 @@ namespace fuzzyOp {
                                             std::string>; // modelname 
 
     void run_fuzzy(std::shared_ptr<ngraph::Function> function, std::string& modelfile) {
-        auto _load_from_npy = [&](std::string& file_path) {
-            std::ifstream npy_file(file_path);
-            std::vector<unsigned long> npy_shape;
-            std::vector<float> npy_data;
-            if (npy_file.good())
-                npy::LoadArrayFromNumpy(file_path, npy_shape, npy_data);
-
-            return npy_data;
-        };
-        auto _load_int32_from_npy = [&](std::string& file_path) {
-            std::ifstream npy_file(file_path);
-            std::vector<unsigned long> npy_shape;
-            std::vector<int32_t> npy_data;
-            if (npy_file.good())
-                npy::LoadArrayFromNumpy(file_path, npy_shape, npy_data);
-
-            return npy_data;
-        };  
-
-        auto _get_npy_dtype = [&](std::string& filename) {
-            std::ifstream stream(filename, std::ifstream::binary);
-            if(!stream) {
-                throw std::runtime_error("io error: failed to open a file.");
-            }
-
-            std::string header = npy::read_header(stream);
-
-            // parse header
-            bool fortran_order;
-            std::string typestr;
-            std::vector<unsigned long>shape;
-
-            npy::parse_header(header, typestr, fortran_order, shape);
-
-            std::cout << "$$$$$$$$$" << filename << ": " << typestr << std::endl;
-            return typestr;       
-        };      
+     
 
         auto modelfolder = get_modelfolder(modelfile);
 
@@ -141,80 +134,47 @@ namespace fuzzyOp {
         const auto parameters = function->get_parameters();
         for (auto i = 0; i < parameters.size(); i++) {
             // read input npy file
-            std::string input_path = modelfolder+"/input"+std::to_string((parameters.size()-1)-i)+".npy";
+            std::string datafile = modelfolder+"/input"+std::to_string((parameters.size()-1)-i)+".npy"; 
 
-            auto dtype = _get_npy_dtype(input_path);
+            auto dtype = get_npy_dtype(datafile);
             if (dtype == "<f4")
             {
-                auto npy_input = _load_from_npy(input_path);
-                if (npy_input.empty()) {
-                    throw std::runtime_error("failed to load input npy for test case. Tried " + input_path);
-                }  
-
-                std::vector<float> data_input(npy_input.size());
-                std::copy_n(npy_input.data(), npy_input.size(), data_input.begin());
-
-                const auto& input_pshape = parameters.at(i)->get_output_partial_shape(0);
-                std::cout << "input_pshape###########" << input_pshape << std::endl;
-                test_case.add_input(data_input);                     
-
+                std::vector<float> data_in;
+                load_from_npy(datafile, data_in);
+                test_case.add_input(data_in);                
             } else if (dtype == "<i4")
             {
-                auto npy_input = _load_int32_from_npy(input_path);
-                if (npy_input.empty()) {
-                    throw std::runtime_error("failed to load input npy for test case. Tried " + input_path);
-                }  
-
-                std::vector<int32_t> data_input(npy_input.size());
-                std::copy_n(npy_input.data(), npy_input.size(), data_input.begin());
-
-                const auto& input_pshape = parameters.at(i)->get_output_partial_shape(0);
-                std::cout << "input_pshape###########" << input_pshape << std::endl;
-                test_case.add_input(data_input);                  
+                std::vector<int32_t> data_in;
+                load_from_npy(datafile, data_in); 
+                test_case.add_input(data_in);                  
             } else {
                 throw std::runtime_error("not supported dtype in" + dtype);
-            }          
+            }                                              
         }
         
         const auto results = function->get_results();
         for (auto i = 0; i < results.size(); i++) {
-            // read input npy file
+            // read expected output npy file
             std::string datafile = modelfolder+"/output"+std::to_string(i)+".npy";
 
-            auto dtype = _get_npy_dtype(datafile);
+            auto dtype = get_npy_dtype(datafile);
             if (dtype == "<f4")
             {
-                auto npy_input = _load_from_npy(datafile);
-                if (npy_input.empty()) {
-                    throw std::runtime_error("failed to load input npy for test case. Tried " + datafile);
-                }  
-
-                std::vector<float> data_input(npy_input.size());
-                std::copy_n(npy_input.data(), npy_input.size(), data_input.begin());
-
-                const auto& input_pshape = results.at(i)->get_output_partial_shape(0);
-                std::cout << "input_pshape###########" << input_pshape << std::endl;
-                test_case.add_expected_output(data_input);                     
-
+                std::vector<float> data_in;
+                load_from_npy(datafile, data_in);
+                test_case.add_expected_output(data_in);                    
             } else if (dtype == "<i4")
             {
-                auto npy_input = _load_int32_from_npy(datafile);
-                if (npy_input.empty()) {
-                    throw std::runtime_error("failed to load input npy for test case. Tried " + datafile);
-                }  
-
-                std::vector<int32_t> data_input(npy_input.size());
-                std::copy_n(npy_input.data(), npy_input.size(), data_input.begin());
-
-                const auto& input_pshape = results.at(i)->get_output_partial_shape(0);
-                std::cout << "output_pshape###########" << input_pshape << std::endl;
-                test_case.add_expected_output(data_input);         
+                std::vector<int32_t> data_in;
+                load_from_npy(datafile, data_in); 
+                test_case.add_expected_output(data_in);         
             } else {
                 throw std::runtime_error("not supported dtype out "+ dtype);
             }          
         }
             
         test_case.run_with_tolerance_as_fp(1e-4);
+        // test_case.run();
     }
 
     TEST_P(PDPDFuzzyOpTest, test_fuzzy) {
