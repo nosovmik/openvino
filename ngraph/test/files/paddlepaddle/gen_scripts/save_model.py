@@ -33,9 +33,8 @@ def print_alike(arr):
 
     print(print_array(arr, "}"))
 
-
 def saveModel(name, exe, feedkeys:list, fetchlist:list, inputs:list, outputs:list):
-    model_dir =  "../models/"+name
+    model_dir =  os.path.dirname(os.path.abspath(__file__)) + '/../models/%s' %(name)
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)      
 

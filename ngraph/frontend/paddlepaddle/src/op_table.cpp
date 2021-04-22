@@ -34,6 +34,14 @@
 #include "op/transpose2.hpp"
 #include "op/yolo_box.hpp"
 #include "op/multiclass_nms.hpp"
+#include "op/sigmoid.hpp"
+#include "op/hard_sigmoid.hpp"
+#include "op/relu6.hpp"
+#include "op/pow.hpp"
+#include "op/squeeze.hpp"
+#include "op/unsqueeze.hpp"
+#include "op/slice.hpp"
+#include "op/hard_swish.hpp"
 
 #include "op_table.hpp"
 
@@ -68,8 +76,16 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"softmax", op::softmax},
             {"transpose2", op::transpose2},
             {"yolo_box", op::yolo_box},
-            {"multiclass_nms3", op::multiclass_nms}
-    };
+            {"multiclass_nms3", op::multiclass_nms},
+            {"sigmoid", op::sigmoid},
+            {"hard_sigmoid", op::hard_sigmoid},
+            {"relu6", op::relu6},
+            {"pow", op::pow},
+            {"squeeze2", op::squeeze},
+            {"unsqueeze2", op::unsqueeze},
+            {"slice", op::slice},
+            {"hard_swish", op::hard_swish},
+        };
 };
 
 }}}
