@@ -13,6 +13,11 @@
 #include "util/test_control.hpp"
 #include "util/test_tools.hpp"
 
+#include "ngraph/ngraph.hpp"
+
+using namespace ngraph;
+using namespace InferenceEngine;
+
 #include "../shared/include/basic_api.hpp"
 
 // library taken from https://github.com/llohse/libnpy
@@ -25,90 +30,151 @@ using TestEngine = test::IE_CPU_Engine;
 static const std::string PDPD = "pdpd";
 static const std::string PATH_TO_MODELS = "/paddlepaddle/models/";
 
+/* helper */
+static bool ends_with(std::string const & value, std::string const & ending) {
+    if (ending.size() > value.size()) return false;
+    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+}
+
+static bool starts_with(std::string const & value, std::string const & starting) {
+    if (starting.size() > value.size()) return false;
+    return std::equal(starting.begin(), starting.end(), value.begin());
+}
+
+static std::string get_modelfolder(std::string& modelfile) { 
+    if (!ends_with(modelfile, ".pdmodel")) return modelfile;
+    size_t found = modelfile.find_last_of("/\\");
+    return  modelfile.substr(0,found);             
+};
+
+static const std::string& trim_space(std::string& str) //trim leading and tailing spaces
+{
+    //leading
+    auto it = str.begin();
+    for (; it != str.end() && isspace(*it); it++);                 
+    auto d = std::distance(str.begin(), it);
+    str.erase(0,d);
+
+    //tailing
+    auto rit = str.rbegin();
+    for (; rit != str.rend() && isspace(*rit); rit++) {
+        str.pop_back();
+    }
+
+    //std::cout << "[" << str << "]" << std::endl; 
+    return str;        
+} 
+
+static std::vector<std::string> get_models(void) {
+    std::string models_csv = std::string(TEST_FILES) + PATH_TO_MODELS + "models.csv";
+    std::ifstream f(models_csv);
+    std::vector<std::string> models;
+    std::string line;
+    while (getline(f, line, ',')) {            
+        auto line_trim = trim_space(line);
+        if(line_trim.empty() || 
+            starts_with(line_trim, "#")) 
+            continue;
+        // std::cout<< "line in csv: [" << line_trim<< "]" << std::endl;            
+        models.emplace_back(line_trim);
+    }
+    return models;
+} 
+
+static void visualizer(std::shared_ptr<ngraph::Function> function, std::string path) {
+        ngraph::pass::VisualizeTree("function.png").run_on_function(function);
+        
+        CNNNetwork network(function);
+        network.serialize(path+".xml", path+".bin");    
+}
+
+std::string get_npy_dtype(std::string& filename) {
+    std::ifstream stream(filename, std::ifstream::binary);
+    if(!stream) {
+        throw std::runtime_error("io error: failed to open a file.");
+    }
+
+    std::string header = npy::read_header(stream);
+
+    // parse header
+    bool fortran_order;
+    std::string typestr;
+    std::vector<unsigned long>shape;
+
+    npy::parse_header(header, typestr, fortran_order, shape);
+    return typestr;       
+}
+
+template <typename T>
+void load_from_npy(std::string& file_path, std::vector<T> &npy_data) {
+    std::ifstream npy_file(file_path);
+    std::vector<unsigned long> npy_shape;    
+    if (npy_file.good())
+        npy::LoadArrayFromNumpy(file_path, npy_shape, npy_data);
+
+    if (npy_data.empty()) {
+        throw std::runtime_error("failed to load npy for test case "+file_path);
+    }        
+}
+
 namespace fuzzyOp {
     using PDPDFuzzyOpTest = FrontEndBasicTest; 
     using PDPDFuzzyOpTestParam = std::tuple<std::string,  // FrontEnd name
                                             std::string,  // Base path to models
                                             std::string>; // modelname 
 
-    /*
-    // There are 2 versions of PDPD model.
-    // * decomposed model, which is a folder.
-    // * composed model, which is a file with extension .pdmodel.
-    */
-    bool ends_with(std::string const & value, std::string const & ending) {
-        if (ending.size() > value.size()) return false;
-        return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
-    }
-
-    const std::string& trim_leadingspace(std::string& str)
-    {
-        auto it = str.begin();
-        for (; it != str.end() && isspace(*it); it++);                 
-        auto d = std::distance(str.begin(), it);
-        std::cout << d << std::endl;
-        return str.erase(0,d);
-    }    
-
-    std::vector<std::string> get_models(void) {
-        std::string models_csv = std::string(TEST_FILES) + PATH_TO_MODELS + "models.csv";
-        std::ifstream f(models_csv);
-        std::vector<std::string> models;
-        std::string line;
-        while (getline(f, line, ',')) {
-            auto line_trim = trim_leadingspace(line);
-            std::cout<< "line in csv: " << line_trim<<std::endl;            
-            models.emplace_back(line_trim);
-        }  
-        for (auto it = models.begin(); it != models.end(); it++)
-            std::cout<<*it<<std::endl; 
-        return models;
-    } 
-
     void run_fuzzy(std::shared_ptr<ngraph::Function> function, std::string& modelfile) {
-        auto _load_from_npy = [&](std::string& file_path) {
-            std::ifstream npy_file(file_path);
-            std::vector<unsigned long> npy_shape;
-            std::vector<float> npy_data;
-            if (npy_file.good())
-                npy::LoadArrayFromNumpy(file_path, npy_shape, npy_data);
+     
 
-            return npy_data;
-        };
-
-        auto _get_modelfolder = [&](std::string& modelfile) { 
-            if (!ends_with(modelfile, ".pdmodel")) return modelfile;
-
-            size_t found = modelfile.find_last_of("/\\");
-
-            return  modelfile.substr(0,found);             
-        };
-
-        auto modelfolder = _get_modelfolder(modelfile);
-
-        std::string input_path = modelfolder+"/input0.npy";
-        std::string output_path = modelfolder+"/output0.npy";
-        auto npy_input = _load_from_npy(input_path);
-        auto npy_output = _load_from_npy(output_path);
-        if (npy_input.empty() || npy_output.empty()) {
-            throw std::runtime_error("failed to load input/output npy for test case. Tried " + input_path);
-        }
-
-        // TODO: to support more inputs/outputs
-        // TODO: to support different data type.
-        std::vector<float> data_input(npy_input.size());
-        std::copy_n(npy_input.data(), npy_input.size(), data_input.begin());
-
-        std::vector<float> data_output(npy_output.size());
-        std::copy_n(npy_output.data(), npy_output.size(), data_output.begin()); 
+        auto modelfolder = get_modelfolder(modelfile);
 
         // run test
         auto test_case = test::TestCase<TestEngine>(function);
 
-        test_case.add_input(data_input);
-        test_case.add_expected_output(npy_output);
+        const auto parameters = function->get_parameters();
+        for (auto i = 0; i < parameters.size(); i++) {
+            // read input npy file
+            std::string datafile = modelfolder+"/input"+std::to_string((parameters.size()-1)-i)+".npy"; 
+
+            auto dtype = get_npy_dtype(datafile);
+            if (dtype == "<f4")
+            {
+                std::vector<float> data_in;
+                load_from_npy(datafile, data_in);
+                test_case.add_input(data_in);                
+            } else if (dtype == "<i4")
+            {
+                std::vector<int32_t> data_in;
+                load_from_npy(datafile, data_in); 
+                test_case.add_input(data_in);                  
+            } else {
+                throw std::runtime_error("not supported dtype in" + dtype);
+            }                                              
+        }
+        
+        const auto results = function->get_results();
+        for (auto i = 0; i < results.size(); i++) {
+            // read expected output npy file
+            std::string datafile = modelfolder+"/output"+std::to_string(i)+".npy";
+
+            auto dtype = get_npy_dtype(datafile);
+            if (dtype == "<f4")
+            {
+                std::vector<float> data_in;
+                load_from_npy(datafile, data_in);
+                test_case.add_expected_output(data_in);                    
+            } else if (dtype == "<i4")
+            {
+                std::vector<int32_t> data_in;
+                load_from_npy(datafile, data_in); 
+                test_case.add_expected_output(data_in);         
+            } else {
+                throw std::runtime_error("not supported dtype out "+ dtype);
+            }          
+        }
             
-        test_case.run();
+        test_case.run_with_tolerance_as_fp(1e-4);
+        // test_case.run();
     }
 
     TEST_P(PDPDFuzzyOpTest, test_fuzzy) {
@@ -120,6 +186,9 @@ namespace fuzzyOp {
         function = m_frontEnd->convert(m_inputModel);
         ASSERT_NE(function, nullptr);
 
+        // debug
+        //visualizer(function, get_modelfolder(m_modelFile)+"/fuzzy");
+
         // run
         run_fuzzy(function, m_modelFile);
     }
@@ -128,8 +197,6 @@ namespace fuzzyOp {
                         ::testing::Combine(
                             ::testing::Values(PDPD),
                             ::testing::Values(PATH_TO_MODELS),
-                            //::testing::ValuesIn({std::string("maxPool_test1"),
-                            //                    std::string("avgPool_test1/avgPool_test1.pdmodel")})), 
                             ::testing::ValuesIn(get_models())),                                                                
                             PDPDFuzzyOpTest::getTestCaseName);                                                 
 

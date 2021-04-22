@@ -26,8 +26,6 @@ namespace op {
     using namespace element;
 
 OutputVector yolo_box (const NodeContext& node_context) {
-    //model_name = node.output('Boxes', 0)
-
     auto data = node_context.get_ng_input("X");
     auto image_size = node_context.get_ng_input("ImgSize");
 
@@ -36,7 +34,7 @@ OutputVector yolo_box (const NodeContext& node_context) {
     int32_t input_width = input_shape[3].get_length();   
 
     int32_t class_num = node_context.get_attribute<int32_t>("class_num");
-    //PDPD anchors attribute is of type int32. Convert to float for computing convinient.
+    // PDPD anchors attribute is of type int32. Convert to float for computing convinient.
     auto _anchors = node_context.get_attribute<std::vector<int32_t>>("anchors");
     std::vector<float> anchors;
     anchors.resize(_anchors.size());    
@@ -58,6 +56,8 @@ OutputVector yolo_box (const NodeContext& node_context) {
     std::cout << "num_anchors: " << num_anchors << " scale_x_y: " << scale_x_y << std::endl;
     std::cout << "downsample_ratio: " << downsample_ratio << " conf_thresh: " << conf_thresh << std::endl;
     std::cout << "class_num:  " << class_num << " image_size: " << image_size << std::endl;
+
+    auto clip_bbox = node_context.get_attribute<bool>("clip_bbox"); 
 
     // main X
     auto node_x_shape = Constant::create<int64_t>(i64, {5}, 
@@ -244,40 +244,50 @@ OutputVector yolo_box (const NodeContext& node_context) {
     auto node_pred_box_x2_decode = std::make_shared<Multiply>(node_pred_box_x2, node_img_width_cast);
     auto node_pred_box_y2_decode = std::make_shared<Multiply>(node_pred_box_y2, node_img_height_cast);
 
-    auto node_number_one = Constant::create<float>(f32, {1}, {1.0});
-    auto node_new_img_height = std::make_shared<Subtract>(node_img_height_cast, node_number_one);
-    auto node_new_img_width = std::make_shared<Subtract>(node_img_height_cast, node_number_one);
-    auto node_pred_box_x2_sub_w = std::make_shared<Subtract>(node_pred_box_x2_decode, node_number_one); //x2 - (w-1)
-    auto node_pred_box_y2_sub_h = std::make_shared<Subtract>(node_pred_box_y2_decode, node_number_one); //y2 - (h-1)
+    // reference
+    // Paddle/python/paddle/fluid/tests/unittests/test_yolo_box_op.py
+    // Paddle/paddle/fluid/operators/detection/yolo_box_op.h
+    // Paddle2ONNX/paddle2onnx/op_mapper/detection/yolo_box.py - clip_bbox is not used by Paddle2ONNX.
+    std::shared_ptr<ngraph::Node> node_pred_box_result;
+    if (clip_bbox) {
+        auto node_number_one = Constant::create<float>(f32, {1}, {1.0});
+        auto node_new_img_height = std::make_shared<Subtract>(node_img_height_cast, node_number_one);
+        auto node_new_img_width = std::make_shared<Subtract>(node_img_width_cast, node_number_one);
+        auto node_pred_box_x2_sub_w = std::make_shared<Subtract>(node_pred_box_x2_decode, node_new_img_width); //x2 - (w-1)
+        auto node_pred_box_y2_sub_h = std::make_shared<Subtract>(node_pred_box_y2_decode, node_new_img_height); //y2 - (h-1)
 
-    /* opset_11 */
-    auto max_const = std::numeric_limits<float>::max();
-    auto node_pred_box_x1_clip = std::make_shared<Clamp>(node_pred_box_x1_decode, 0.0f, max_const);
-    auto node_pred_box_y1_clip = std::make_shared<Clamp>(node_pred_box_y1_decode, 0.0f, max_const);
-    auto node_pred_box_x2_clip = std::make_shared<Clamp>(node_pred_box_x2_sub_w, 0.0f, max_const);
-    auto node_pred_box_y2_clip = std::make_shared<Clamp>(node_pred_box_y2_sub_h, 0.0f, max_const);
+        auto max_const = std::numeric_limits<float>::max();
+        auto node_pred_box_x1_clip = std::make_shared<Clamp>(node_pred_box_x1_decode, 0.0f, max_const);
+        auto node_pred_box_y1_clip = std::make_shared<Clamp>(node_pred_box_y1_decode, 0.0f, max_const);
+        auto node_pred_box_x2_clip = std::make_shared<Clamp>(node_pred_box_x2_sub_w, 0.0f, max_const);
+        auto node_pred_box_y2_clip = std::make_shared<Clamp>(node_pred_box_y2_sub_h, 0.0f, max_const);
 
-    auto node_pred_box_x2_res = std::make_shared<Subtract>(node_pred_box_x2_decode, node_pred_box_x2_clip);
-    auto node_pred_box_y2_res = std::make_shared<Subtract>(node_pred_box_y2_decode, node_pred_box_y2_clip);
+        auto node_pred_box_x2_res = std::make_shared<Subtract>(node_pred_box_x2_decode, node_pred_box_x2_clip);
+        auto node_pred_box_y2_res = std::make_shared<Subtract>(node_pred_box_y2_decode, node_pred_box_y2_clip);
 
-    auto node_pred_box_result = std::make_shared<Concat>(OutputVector{node_pred_box_x1_clip, node_pred_box_y1_clip,
-                node_pred_box_x2_res, node_pred_box_y2_res}, -1); //outputs=node.output('Boxes')
+        node_pred_box_result = std::make_shared<Concat>(OutputVector{node_pred_box_x1_clip, node_pred_box_y1_clip,
+                    node_pred_box_x2_res, node_pred_box_y2_res}, -1); //outputs=node.output('Boxes') 
+    }
+    else {
+        node_pred_box_result = std::make_shared<Concat>(OutputVector{node_pred_box_x1_decode, node_pred_box_y1_decode,
+                    node_pred_box_x2_decode, node_pred_box_y2_decode}, -1); //outputs=node.output('Boxes')          
+    }
 
+    //
     auto node_score_shape = Constant::create<int64_t>(i64, {score_shape.size()}, score_shape);
     auto node_score_new_shape = std::make_shared<Reshape>(node_score, node_score_shape, false); //outputs=node.output('Scores')
 
-#if 1
+    //TODO: combine the two output nodes into 1, to satisfy frontend/pdpd.
+#if 0
     return OutputVector{node_pred_box_result, node_score_new_shape};
-#else
-    //FIXME: combine the two output nodes into 1, to satisfy frontend/pdpd.
+#else    
     auto node_result_concat = std::make_shared<Concat>(OutputVector{node_pred_box_result, node_score_new_shape}, 2);
 
     auto result_split_axis = Constant::create<int64_t>(i64, {1}, {2}); //(1,xx,6) -> bboxes(1,xx,4) and scores(1,xx,class_num)
     auto result_split_axes_lengths = Constant::create<int64_t>(i64, {2}, {4, class_num});
     auto node_result = std::make_shared<VariadicSplit>(node_result_concat, result_split_axis, result_split_axes_lengths);
-    //return OutputVector{node_result}; 
     return node_result->outputs();
-#endif   
+#endif
 }
 
 }}}}

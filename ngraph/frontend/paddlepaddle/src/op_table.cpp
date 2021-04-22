@@ -38,6 +38,14 @@
 #include "op/fill_constant.hpp"
 #include "op/uniform_random.hpp"
 #include "op/assign_value.hpp"
+#include "op/sigmoid.hpp"
+#include "op/hard_sigmoid.hpp"
+#include "op/relu6.hpp"
+#include "op/pow.hpp"
+#include "op/squeeze.hpp"
+#include "op/unsqueeze.hpp"
+#include "op/slice.hpp"
+#include "op/hard_swish.hpp"
 
 #include "op_table.hpp"
 
@@ -76,15 +84,21 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"transpose2", op::transpose2},
             {"yolo_box", op::yolo_box},
             {"multiclass_nms3", op::multiclass_nms},
-            {"softmax", op::softmax},
             {"rnn", op::rnn},
             {"fill_constant", op::fill_constant},
-            {"transpose2", op::transpose2},
             {"bmm", op::matmul},
             {"depthwise_conv2d", op::conv2d},
             {"uniform_random", op::uniform_random},
             {"assign_value", op::assign_value}
-    };
+            {"sigmoid", op::sigmoid},
+            {"hard_sigmoid", op::hard_sigmoid},
+            {"relu6", op::relu6},
+            {"pow", op::pow},
+            {"squeeze2", op::squeeze},
+            {"unsqueeze2", op::unsqueeze},
+            {"slice", op::slice},
+            {"hard_swish", op::hard_swish},
+        };
 };
 
 }}}
