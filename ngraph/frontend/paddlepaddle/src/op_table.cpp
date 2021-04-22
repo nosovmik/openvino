@@ -89,7 +89,7 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"bmm", op::matmul},
             {"depthwise_conv2d", op::conv2d},
             {"uniform_random", op::uniform_random},
-            {"assign_value", op::assign_value}
+            {"assign_value", op::assign_value},
             {"sigmoid", op::sigmoid},
             {"hard_sigmoid", op::hard_sigmoid},
             {"relu6", op::relu6},
@@ -97,7 +97,7 @@ std::map<std::string, CreatorFunction> get_supported_ops() {
             {"squeeze2", op::squeeze},
             {"unsqueeze2", op::unsqueeze},
             {"slice", op::slice},
-            {"hard_swish", op::hard_swish},
+            {"hard_swish", op::hard_swish}
         };
 };
 
