@@ -34,22 +34,21 @@ def print_alike(arr):
     print(print_array(arr, "}"))
 
 
-def saveModel(name, exe, feedkeys:list, fetchlist:list, inputs:list, outputs:list, **kwargv):
-    for key, value in kwargv.items():
-            print ("%s == %s" %(key, value))
-
+def saveModel(name, exe, feedkeys:list, fetchlist:list, inputs:list, outputs:list):
     model_dir =  "../models/"+name
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)      
 
     print("\n\n------------- %s -----------\n" % (name))
     for i, input in enumerate(inputs):
-        print("INPUT %s :" % (feedkeys[i]), input.shape, input.dtype)
+        print("INPUT %s :" % (feedkeys[i]), input.shape, input.dtype, "\n")
         print_alike(input)
         np.save(os.path.join(model_dir, "input{}".format(i)), input)
+        np.save(os.path.join(model_dir, "input{}.{}.{}".format(i, feedkeys[i], input.dtype)), input)
     print("\n")
+
     for i, output in enumerate(outputs):
-        print("OUTPUT %s :" % (fetchlist[i]),output.shape, output.dtype)
+        print("OUTPUT %s :" % (fetchlist[i]),output.shape, output.dtype, "\n")
         print_alike(output)
         np.save(os.path.join(model_dir, "output{}".format(i)), output)     
 

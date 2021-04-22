@@ -26,15 +26,13 @@ def yolo_box(name : str, x, img_size, attrs : dict):
         # startup program will call initializer to initialize the parameters.
         exe.run(pdpd.static.default_startup_program())
 
-        input_dict = {'x': x, 'img_size': img_size}
-        input_dict = dict(sorted(input_dict.items()))
-
         outs = exe.run(
-            feed=input_dict,
+            feed={'x': x, 'img_size': img_size},
             fetch_list=[boxes, scores])
-
-        #save inputs in alphabeta order, as it is in pdpd frontend.
-        saveModel(name, exe, feedkeys=list(input_dict.keys()), fetchlist=[boxes, scores], inputs=list(input_dict.values()), outputs=outs)
+        
+        # Save inputs in order of ngraph function, to facilite Fuzzy test, 
+        # which accepts inputs and outputs in this order as well. 
+        saveModel(name, exe, feedkeys=['x', 'img_size'], fetchlist=[boxes, scores], inputs=[x, img_size], outputs=outs)
 
     return outs
 
@@ -50,7 +48,7 @@ def onnx_run(x, img_size, onnx_model="../models/yolo_box_test1/yolo_box_test1.on
     print(pred_onx)
     return pred_onx
 
-def IE_run(x, img_size, path_to_ie_model="../models/yolo_box_test1/yolo_box"):
+def OV_IR_run(x, img_size, path_to_ie_model="../models/yolo_box_test1/fuzzy"):
     from openvino.inference_engine import IECore
 
     #IE inference
@@ -60,6 +58,40 @@ def IE_run(x, img_size, path_to_ie_model="../models/yolo_box_test1/yolo_box"):
     pred_ie = exec_net.infer({"img_size": img_size, "x": x})
     print(type(pred_ie))
     return pred_ie
+
+def OV_frontend_run(x, img_size, path_to_pdpd_model="../models/yolo_box_test1/", user_shapes=[]):
+    from ngraph import FrontEndManager # pylint: disable=import-error
+    from ngraph import function_to_cnn # pylint: disable=import-error
+    from ngraph import PartialShape    # pylint: disable=import-error
+
+    fem = FrontEndManager()
+    print('fem.availableFrontEnds: ' + str(fem.availableFrontEnds()))
+    print('Initializing new FE for framework {}'.format("pdpd"))
+    fe = fem.loadByFramework("pdpd")
+    print(fe)
+    inputModel = fe.loadFromFile(path_to_pdpd_model)
+    try:
+        place = inputModel.getPlaceByTensorName('x')
+        print(place)
+        print(place.isEqual(None))
+    except Exception:
+        print('Failed to call model API with hardcoded input name "x"')
+
+    if len(user_shapes) > 0:
+        for user_shape in user_shapes:
+            inputModel.setPartialShape(user_shape['node'], PartialShape(user_shape['shape']))
+    nGraphModel = fe.convert(inputModel)
+
+    net = function_to_cnn(nGraphModel)
+
+    from openvino.inference_engine import IECore
+
+    #IE inference
+    ie = IECore()
+    exec_net = ie.load_network(net, "CPU")
+    pred_ie = exec_net.infer({"img_size": img_size, "x": x})
+    print(type(pred_ie))
+    return pred_ie    
 
 def checker(outs, dump=False):
     if type(outs) is list:
@@ -130,7 +162,7 @@ def main():
             'class_num': 2,
             'conf_thresh': 0.5,
             'downsample_ratio': 32,
-            'clip_bbox': True, #There is bug in Paddle2ONN where clip_bbox is always ignored.
+            'clip_bbox': False, #There is bug in Paddle2ONN where clip_bbox is always ignored.
             'scale_x_y': 1.0
     }
 
@@ -152,10 +184,13 @@ def main():
     subprocess.run(["paddle2onnx", "--model_dir=../models/yolo_box_test1/", "--save_file=../models/yolo_box_test1/yolo_box_test1.onnx", "--opset_version=12"])
     pred_onx = onnx_run(data, data_ImSize)
 
-    # step 3. generate OV IR
+    # step 3.a generate OV IR
     # MO or ngraph/frontend/paddlepaddle Fuzzy unit test helper.
-    subprocess.run(["unit-test", "--gtest_filter=*Fuzzy*"])   
-    pred_ie = IE_run(data, data_ImSize)
+    #subprocess.run(["unit-test", "--gtest_filter=*Fuzzy*"])   
+    #pred_ie = OV_IR_run(data, data_ImSize)
+
+    # step3.b alternatively, run from frontend API
+    pred_ie = OV_frontend_run(data, data_ImSize)
 
     # step 4. compare 
     # Try different tolerence
