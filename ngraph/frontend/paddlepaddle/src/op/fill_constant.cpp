@@ -14,15 +14,20 @@
 // limitations under the License.
 //*****************************************************************************
 
-#pragma once
-#include "node_context.hpp"
+#include <ngraph/opsets/opset6.hpp>
+#include "relu.hpp"
+#include "fill_constant.hpp"
+
 
 namespace ngraph {
-namespace frontend {
-namespace pdpd {
-namespace op {
+    namespace frontend {
+        namespace pdpd {
+            namespace op {
 
-OutputVector nearest_interp_v2 (const NodeContext& node_context);
-OutputVector bilinear_interp_v2 (const NodeContext& node_context);
+                OutputVector fill_constant (const NodeContext& node) {
+                    auto value = node.get_attribute<float>("value");
+                    auto shape = node.get_attribute<std::vector<int64_t>>("shape");
+                    return {std::make_shared<ngraph::opset6::Constant>(ngraph::element::f32, Shape(shape.begin(), shape.end()), value)};
+                }
 
-}}}}
+            }}}}

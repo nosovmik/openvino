@@ -15,14 +15,17 @@
 //*****************************************************************************
 
 #pragma once
+
 #include "node_context.hpp"
 
 namespace ngraph {
-namespace frontend {
-namespace pdpd {
-namespace op {
+    namespace frontend {
+        namespace pdpd {
+            namespace op {
 
-OutputVector nearest_interp_v2 (const NodeContext& node_context);
-OutputVector bilinear_interp_v2 (const NodeContext& node_context);
+                OutputVector lstm(const NodeContext &node);
 
-}}}}
+            }
+        }
+    }
+}
