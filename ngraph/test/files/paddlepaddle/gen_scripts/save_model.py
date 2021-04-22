@@ -38,7 +38,7 @@ def saveModel(name, exe, feedkeys:list, fetchlist:list, inputs:list, outputs:lis
     for key, value in kwargv.items():
             print ("%s == %s" %(key, value))
 
-    model_dir =  "../models/"+name
+    model_dir =  os.path.dirname(os.path.abspath(__file__)) + '/../models/%s' %(name)
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)      
 
