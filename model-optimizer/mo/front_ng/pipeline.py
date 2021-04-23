@@ -5,6 +5,7 @@ import argparse
 
 import logging as log
 from mo.front_ng.extractor import fe_user_data_repack
+from mo.middle.passes.infer import validate_batch_in_shape
 
 
 def moc_pipeline(argv: argparse.Namespace):
@@ -63,24 +64,33 @@ def moc_pipeline(argv: argparse.Namespace):
         for user_shape in user_shapes:
             if 'shape' in user_shape and user_shape['shape'] is not None:
                 inputModel.setPartialShape(user_shape['node'], PartialShape(user_shape['shape']))
-    nGraphFunction = fe.convert(inputModel)
 
     # Set batch size
     # TODO: consider alternatives like exposing nGraph transformatons or use IENetwork.reshape to set batch size
+
     if argv.batch > 0:
         log.debug("Setting batch size to {}".format(argv.batch))
-        for par in nGraphFunction.get_parameters():
-            oldPartShape = par.get_partial_shape()
+        for place in inputModel.getInputs():
+            oldPartShape = inputModel.getPartialShape(place)
             newshape = []
+            oldshape_converted = []
+            joinedName = ' '.join(place.getNames())
             if oldPartShape.rank.is_static:
                 for i in range(oldPartShape.rank.get_length()):
-                    # TODO: Assume batch size is always 1-st dimension in shape
+                    # Assume batch size is always 1-st dimension in shape
                     # Keep other dimentions unchanged
                     newshape.append(Dimension(argv.batch) if i is 0 else oldPartShape.get_dimension(i))
+                    oldshape_converted.append(oldPartShape.get_dimension(i))
+
+                validate_batch_in_shape(oldshape_converted, ' '.join(place.getNames()))
             else:
+                # TODO: raise error from FAQ
                 raise Exception("Setting batch size for shapes with dynamic rank is not supported")
+
             newPartShape = PartialShape(newshape)
-            log.debug("Input: {}, Old shape: {}, New shape: {}".format(par.get_friendly_name(), oldPartShape, newPartShape))
-            par.set_partial_shape(newPartShape)
-    nGraphFunction.validate_nodes_and_infer_types()
+            log.debug("Input: {}, Old shape: {}, New shape: {}"
+                      .format(joinedName, oldshape_converted, newshape))
+            inputModel.setPartialShape(place, newPartShape)
+
+    nGraphFunction = fe.convert(inputModel)
     return nGraphFunction

@@ -50,6 +50,7 @@ class MockInputModel(InputModel):
         self.m_getPlaceByTensorNameCnt = 0
         self.m_extractSubGraph = 0
         self.m_setPartialShapeCnt = 0
+        self.m_getPartialShapeCnt = 0
         self.m_partialShape = []
         super(MockInputModel, self).__init__()
 
@@ -91,6 +92,11 @@ class MockInputModel(InputModel):
         # print("Mock: Called set_partial_shape {}".format(name))
         self.m_setPartialShapeCnt += 1
         self.m_partialShape = shape
+
+    def get_partial_shape(self, place):
+        # print("Mock: Called get_partial_shape")
+        self.m_getPartialShapeCnt += 1
+        return PartialShape(self.m_partialShape)
 
 
 class MockFrontEnd(FrontEnd):
@@ -231,6 +237,7 @@ def test_set_partial_shape():
     model.setPartialShape(inputs[0], PartialShape([1, 2, 3, 4]))
     assert mockModel.m_setPartialShapeCnt == 1
     assert mockModel.m_partialShape == PartialShape([1, 2, 3, 4])
+    assert model.getPartialShape(inputs[0]) == PartialShape([1, 2, 3, 4])
 
 
 def test_get_place_by_tensor_name():
@@ -290,6 +297,10 @@ def test_error_cases():
 
     with pytest.raises(RuntimeError) as excInfo:
         model1.setPartialShape(inputs2[0], PartialShape([1, 2, 3, 4]))
+    assert 'Place' in str(excInfo.value)
+
+    with pytest.raises(RuntimeError) as excInfo:
+        model1.getPartialShape(inputs2[0])
     assert 'Place' in str(excInfo.value)
 
 

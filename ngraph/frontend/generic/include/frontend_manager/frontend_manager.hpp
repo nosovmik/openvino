@@ -79,6 +79,7 @@ public:
 
     virtual ~Place() = default;
 
+
     /// \brief All associated names (synonyms) that identify this place in the graph in a framework specific way
     /// \return A vector of strings each representing a name that identifies this place in the graph.
     ///         Can be empty if there are no names associated with this place or name cannot be attached.
@@ -255,6 +256,9 @@ public:
     /// This partial shape will be converted to corresponding shape of results ngraph nodes and will define shape inference
     /// when the model is converted to ngraph.
     virtual void setPartialShape (Place::Ptr place, const ngraph::PartialShape&);
+
+    /// Get current shape for this place; place should be uniquely refer to some data.
+    virtual ngraph::PartialShape getPartialShape (Place::Ptr place) const;
 
     /// Sets new element type for a place.
     virtual void setElementType (Place::Ptr place, const ngraph::element::Type&);

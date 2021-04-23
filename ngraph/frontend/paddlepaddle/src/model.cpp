@@ -26,6 +26,7 @@ public:
     void extractSubgraph (const std::vector<Place::Ptr>& inputs, const std::vector<Place::Ptr>& outputs);
     void setDefaultShape (Place::Ptr place, const ngraph::Shape&);
     void setPartialShape (Place::Ptr place, const ngraph::PartialShape&);
+    ngraph::PartialShape getPartialShape (Place::Ptr place) const;
     void setElementType (Place::Ptr place, const ngraph::element::Type&);
     
     std::vector<uint8_t> readWeight(const std::string& name, int64_t len);
@@ -223,6 +224,18 @@ void InputModelPDPD::InputModelPDPDImpl::setPartialShape (Place::Ptr place, cons
     }
 }
 
+ngraph::PartialShape InputModelPDPD::InputModelPDPDImpl::getPartialShape (Place::Ptr place) const {
+    if (auto var_place = std::dynamic_pointer_cast<TensorPlacePDPD>(place)) {
+        return var_place->getPartialShape();
+    } else if (auto in_port_place = std::dynamic_pointer_cast<InPortPlacePDPD>(place)) {
+        return in_port_place->getSourceTensorPDPD()->getPartialShape();
+    } else if (auto out_port_place = std::dynamic_pointer_cast<OutPortPlacePDPD>(place)) {
+        return out_port_place->getTargetTensorPDPD()->getPartialShape();
+    } else {
+        PDPD_THROW("Cannot set shape for this place.");
+    }
+}
+
 void InputModelPDPD::InputModelPDPDImpl::setElementType (Place::Ptr place, const ngraph::element::Type& type) {
     if (auto var_place = std::dynamic_pointer_cast<TensorPlacePDPD>(place)) {
         var_place->setElementType(type);
@@ -283,6 +296,10 @@ void InputModelPDPD::setDefaultShape (Place::Ptr place, const ngraph::Shape& sha
 
 void InputModelPDPD::setPartialShape (Place::Ptr place, const ngraph::PartialShape& p_shape) {
     return _impl->setPartialShape(place, p_shape);
+}
+
+ngraph::PartialShape InputModelPDPD::getPartialShape (Place::Ptr place) const {
+    return _impl->getPartialShape(place);
 }
 
 void InputModelPDPD::setElementType (Place::Ptr place, const ngraph::element::Type& type) {

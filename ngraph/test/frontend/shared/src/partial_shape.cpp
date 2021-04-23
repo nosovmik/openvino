@@ -62,6 +62,17 @@ TEST_P(FrontEndPartialShapeTest, testCheckOldPartialShape)
     ASSERT_EQ(shape, m_partShape.m_oldPartialShape);
 }
 
+TEST_P(FrontEndPartialShapeTest, testGetPartialShape)
+{
+    ASSERT_NO_THROW(doLoadFromFile());
+    Place::Ptr place;
+    ASSERT_NO_THROW(place = m_inputModel->getPlaceByTensorName(m_partShape.m_tensorName));
+    ASSERT_NE(place, nullptr);
+    ngraph::PartialShape oldShape;
+    ASSERT_NO_THROW(oldShape = m_inputModel->getPartialShape(place));
+    ASSERT_EQ(oldShape, m_partShape.m_oldPartialShape);
+}
+
 TEST_P(FrontEndPartialShapeTest, testSetNewPartialShape)
 {
     ASSERT_NO_THROW(doLoadFromFile());

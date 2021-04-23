@@ -107,6 +107,10 @@ public:
     virtual void set_partial_shape(std::shared_ptr<PyPlace> place, const ngraph::PartialShape& shape) {
         PYBIND11_OVERLOAD(void, PyInputModel, set_partial_shape, place, shape);
     }
+
+    virtual ngraph::PartialShape get_partial_shape(std::shared_ptr<PyPlace> place) const {
+        PYBIND11_OVERLOAD(ngraph::PartialShape, PyInputModel, get_partial_shape, place);
+    }
 };
 
 class FrontEndWrapper;
@@ -152,6 +156,14 @@ public:
             throw std::runtime_error("Invalid Place object to override");
         }
         m_actual->set_partial_shape(placeWrapper->m_actual, newShape);
+    }
+
+    ngraph::PartialShape getPartialShape(Place::Ptr place) const override {
+        auto placeWrapper = std::dynamic_pointer_cast<PlaceWrapper>(place);
+        if (!placeWrapper || this != placeWrapper->getModel().get()) {
+            throw std::runtime_error("Invalid Place object to get partial shape");
+        }
+        return m_actual->get_partial_shape(placeWrapper->m_actual);
     }
 
     void overrideAllInputs (const std::vector<Place::Ptr>& places) override {
@@ -272,7 +284,7 @@ void regclass_pyngraph_FrontEnd(py::module m)
     pyFE.doc() = "ngraph.impl.FrontEnd wraps ngraph::frontend::FrontEnd";
     pyFE.def(py::init<>());
 
-    wrapper.def("loadFromFile", &FrontEnd::loadFromFile, py::arg("path"));
+//    wrapper.def("loadFromFile", &FrontEnd::loadFromFile, py::arg("path"));
     wrapper.def("convert", [](FrontEnd& self,
             InputModel::Ptr model) -> std::shared_ptr<ngraph::Function> {
         return self.convert(model);
@@ -307,6 +319,7 @@ void regclass_pyngraph_InputModel(py::module m)
     im.def("extractSubgraph", &InputModel::extractSubgraph);
     im.def("getPlaceByTensorName", &InputModel::getPlaceByTensorName);
     im.def("setPartialShape", &InputModel::setPartialShape);
+    im.def("getPartialShape", &InputModel::getPartialShape);
     im.def("getInputs", &InputModel::getInputs);
     im.def("getOutputs", &InputModel::getOutputs);
     im.def("overrideAllInputs", &InputModel::overrideAllInputs);
