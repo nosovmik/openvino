@@ -124,16 +124,6 @@ namespace ngraph {
                                     opset6::Constant::create(element::Type_t::i32, Shape{1}, {1}),
                                     axes);
 
-                            auto shape_of_r = std::make_shared<opset6::ShapeOf>(
-                                    m_input_map[LSTMInput::LSTM_INPUT_R]);
-                            auto num_directions_node = std::make_shared<opset6::Gather>(
-                                    shape_of_r,
-                                    opset6::Constant::create(element::Type_t::i32, Shape{1}, {0}),
-                                    axes);
-                            auto hidden_size_node = std::make_shared<opset6::Gather>(
-                                    shape_of_r,
-                                    opset6::Constant::create(element::Type_t::i32, Shape{1}, {2}),
-                                    axes);
                             //TODO Specify SEQ_LEN for each batch
                             m_input_map[LSTMInput::LSTM_INPUT_SEQ_LENGTHS] =
                                     std::make_shared<opset6::Broadcast>(seq_length_node,

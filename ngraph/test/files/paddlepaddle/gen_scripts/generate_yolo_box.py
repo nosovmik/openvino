@@ -174,28 +174,8 @@ def main():
     data = np.random.random(x_shape).astype('float32')
     data_ImSize = np.random.randint(10, 20, imgsize_shape).astype('int32') 
 
-    # For any change to pdpd_attrs, do -
-    # step 1. generate paddle model
     pred_pdpd = yolo_box('yolo_box_test1', data, data_ImSize, pdpd_attrs)
 
-    # step 2. generate onnx model
-    # !paddle2onnx --model_dir=../models/yolo_box_test1/ --save_file=../models/yolo_box_test1/yolo_box_test1.onnx --opset_version=10
-    import subprocess
-    subprocess.run(["paddle2onnx", "--model_dir=../models/yolo_box_test1/", "--save_file=../models/yolo_box_test1/yolo_box_test1.onnx", "--opset_version=12"])
-    pred_onx = onnx_run(data, data_ImSize)
-
-    # step 3.a generate OV IR
-    # MO or ngraph/frontend/paddlepaddle Fuzzy unit test helper.
-    #subprocess.run(["unit-test", "--gtest_filter=*Fuzzy*"])   
-    #pred_ie = OV_IR_run(data, data_ImSize)
-
-    # step3.b alternatively, run from frontend API
-    pred_ie = OV_frontend_run(data, data_ImSize)
-
-    # step 4. compare 
-    # Try different tolerence
-    validate(pred_pdpd, pred_onx, pred_ie)
-    validate(pred_pdpd, pred_onx, pred_ie, rtol=1e-4, atol=1e-5) 
 
 
 if __name__ == "__main__":

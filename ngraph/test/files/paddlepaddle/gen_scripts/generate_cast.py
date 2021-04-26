@@ -11,7 +11,6 @@ def cast(name : str, x, in_dtype, out_dtype):
     with pdpd.static.program_guard(pdpd.static.Program(), pdpd.static.Program()):
         node_x = pdpd.static.data(name = 'x', shape = x.shape, dtype = in_dtype)
         out = pdpd.cast(node_x, out_dtype)
-
         cpu = pdpd.static.cpu_places(1)
         exe = pdpd.static.Executor(cpu[0])
 
@@ -27,9 +26,9 @@ def cast(name : str, x, in_dtype, out_dtype):
 
 def main():
     # TODO: more type
-    in_dtype = 'float32'
+    in_dtype = 'int32'
     out_dtype = 'float32'
-    data = np.array( [ [1.1, 2.1, 1.0], [3.2, 4.7, 5.6] ], dtype = in_dtype )
+    data = np.array( [ [1, 2, 1], [3, 4, 5] ], dtype = in_dtype )
     cast("cast_test1", data, in_dtype, out_dtype)
 
 #    in_dtype = 'float32'

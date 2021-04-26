@@ -32,7 +32,6 @@ def pdpd_rnn_lstm(input_size, hidden_size, layers, direction):
         exe = pdpd.static.Executor(cpu[0])
         exe.run(startup_program)
 
-        pdpd.static.io.save_inference_model("../models/paddle_rnn_lstm_layer_" + str(layers) + '_' + str(direction), [data], [y], exe)
         outs = exe.run(
             feed={'x': np.ones([4, 3, input_size]).astype(np.float32)},
             fetch_list=[y],

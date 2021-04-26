@@ -13,8 +13,7 @@ def run_and_save_model(input_x, name, feed, fetch_list, main_prog, start_prog):
         program=main_prog)
 
     print(outs)
-    pdpd.static.save_inference_model("../models/" + name,
-                                     [feed], [fetch_list], exe, program=main_prog)
+
     with pdpd.static.program_guard(main_prog, start_prog):
         saveModel(name, exe, feedkeys=['x'], fetchlist=fetch_list, inputs=[input_x], outputs=[outs[0]])
 
