@@ -15,25 +15,20 @@
 //*****************************************************************************
 
 #include <ngraph/opsets/opset6.hpp>
-#include "scale.hpp"
+#include "pow.hpp"
+#include <paddlepaddle_frontend/utility.hpp>
 
 namespace ngraph {
 namespace frontend {
 namespace pdpd {
 namespace op {
 
-NamedOutputs scale (const NodeContext& node) {
-    auto data = node.get_ng_input("X");
-    auto scale = ngraph::opset6::Constant::create(ngraph::element::f32, {1}, {node.get_attribute<float>("scale")});
-    auto bias = ngraph::opset6::Constant::create(ngraph::element::f32, {1}, {node.get_attribute<float>("bias")});
-    auto bias_after_scale = node.get_attribute<bool>("bias_after_scale");
-    if(!bias_after_scale) {
-        auto node_add = std::make_shared<ngraph::opset6::Add>(data, bias);
-        return node.default_single_output_mapping({std::make_shared<ngraph::opset6::Multiply>(node_add, scale)}, {"Out"});
-    } else {
-        auto node_multiply =  std::make_shared<ngraph::opset6::Multiply>(data, scale);
-        return node.default_single_output_mapping({std::make_shared<ngraph::opset6::Add>(node_multiply, bias)}, {"Out"});
-    }
+NamedOutputs pow (const NodeContext& node) {
+    auto x = node.get_ng_input("X");
+    Output<Node> factorNode;
+    auto factor = node.get_attribute<float>("factor");
+    factorNode = ngraph::opset6::Constant::create(ngraph::element::f32, {}, {factor});
+    return node.default_single_output_mapping({std::make_shared<ngraph::opset6::Power>(x, factorNode)}, {"Out"});
 }
 
 }}}}
