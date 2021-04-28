@@ -4,6 +4,7 @@
 
 #include <samples/classification_results.h>
 
+#include <frontend_manager/frontend_manager.hpp>
 #include <inference_engine.hpp>
 #include <iterator>
 #include <memory>
@@ -11,8 +12,6 @@
 #include <samples/ocv_common.hpp>
 #include <string>
 #include <vector>
-
-#include <frontend_manager/frontend_manager.hpp>
 
 using namespace InferenceEngine;
 
@@ -103,12 +102,12 @@ int main(int argc, char* argv[]) {
         // .bin files) or ONNX (.onnx file) format
         CNNNetwork network = ie.ReadNetwork(input_model);
 
-//        ngraph::frontend::FrontEndManager manager;
-//        auto FE = manager.loadByFramework("pdpd");
-//        auto inputModel = FE->loadFromFile(input_model);
-//        //inputModel->setPartialShape(inputModel->getInputs()[0], ngraph::PartialShape({1, 224, 224, 3}));
-//        auto ngFunc = FE->convert(inputModel);
-//        CNNNetwork network(ngFunc);
+        // ngraph::frontend::FrontEndManager manager;
+        // auto FE = manager.loadByFramework("pdpd");
+        // auto inputModel = FE->loadFromFile(input_model);
+        // //inputModel->setPartialShape(inputModel->getInputs()[0], ngraph::PartialShape({1, 224, 224, 3}));
+        // auto ngFunc = FE->convert(inputModel);
+        // CNNNetwork network(ngFunc);
 
         if (network.getOutputsInfo().size() != 1)
             throw std::logic_error("Sample supports topologies with 1 output only");
@@ -139,7 +138,7 @@ int main(int argc, char* argv[]) {
         }
         std::vector<DataPtr> output_info;
         std::vector<std::string> output_name;
-        for (auto &out : network.getOutputsInfo()) {
+        for (auto& out : network.getOutputsInfo()) {
             out.second->setPrecision(Precision::FP32);
             output_info.push_back(out.second);
             output_name.push_back(out.first);
