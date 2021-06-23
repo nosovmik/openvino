@@ -29,9 +29,9 @@ namespace ngraph
 
             /// \brief Validates if FrontEnd can recognize model with parameters specified.
             /// Same parameters should be used to load model.
-            /// \param vars Any number of parameters of any type. What kind of parameters 
-            /// are accepted is determined by each FrontEnd individually, typically it is 
-            /// std::string containing path to the model file. For more information please 
+            /// \param vars Any number of parameters of any type. What kind of parameters
+            /// are accepted is determined by each FrontEnd individually, typically it is
+            /// std::string containing path to the model file. For more information please
             /// refer to specific FrontEnd documentation.
             /// \return true if model recognized, false - otherwise.
             template <typename... Types>
