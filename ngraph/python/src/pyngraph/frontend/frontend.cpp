@@ -6,7 +6,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 
-#include "frontend_manager.hpp"
+#include "frontend.hpp"
 #include "frontend_manager/frontend_exceptions.hpp"
 #include "frontend_manager/frontend_manager.hpp"
 #include "pyngraph/function.hpp"
@@ -15,14 +15,17 @@ namespace py = pybind11;
 
 void regclass_pyngraph_FrontEnd(py::module m)
 {
-    py::class_<ngraph::frontend::FrontEnd, std::shared_ptr<ngraph::frontend::FrontEnd>> fem(
+    py::class_<FrontEndWrapper, std::shared_ptr<FrontEndWrapper>> fe(
         m, "FrontEnd", py::dynamic_attr());
-    fem.doc() = "ngraph.impl.FrontEnd wraps ngraph::frontend::FrontEnd";
+    fe.doc() = "ngraph.impl.FrontEnd wraps ngraph::frontend::FrontEnd";
 
-    fem.def("load_from_file",
-            &ngraph::frontend::FrontEnd::load_from_file,
-            py::arg("path"),
-            R"(
+    fe.def(
+        "load_from_file",
+        [](const FrontEndWrapper& frontEnd, const std::string& path) {
+            return frontEnd.get()->load_from_file(path);
+        },
+        py::arg("path"),
+        R"(
                 Loads an input model by specified model file path.
 
                 Parameters
@@ -36,11 +39,13 @@ void regclass_pyngraph_FrontEnd(py::module m)
                     Loaded input model.
              )");
 
-    fem.def("convert",
-            static_cast<std::shared_ptr<ngraph::Function> (ngraph::frontend::FrontEnd::*)(
-                ngraph::frontend::InputModel::Ptr) const>(&ngraph::frontend::FrontEnd::convert),
-            py::arg("model"),
-            R"(
+    fe.def(
+        "convert",
+        [](const FrontEndWrapper& frontEnd, ngraph::frontend::InputModel::Ptr model) {
+            return frontEnd.get()->convert(model);
+        },
+        py::arg("model"),
+        R"(
                 Completely convert and normalize entire function, throws if it is not possible.
 
                 Parameters
@@ -54,11 +59,13 @@ void regclass_pyngraph_FrontEnd(py::module m)
                     Fully converted nGraph function.
              )");
 
-    fem.def("convert",
-            static_cast<std::shared_ptr<ngraph::Function> (ngraph::frontend::FrontEnd::*)(
-                std::shared_ptr<ngraph::Function>) const>(&ngraph::frontend::FrontEnd::convert),
-            py::arg("function"),
-            R"(
+    fe.def(
+        "convert",
+        [](const FrontEndWrapper& frontEnd, std::shared_ptr<ngraph::Function> function) {
+            return frontEnd.get()->convert(function);
+        },
+        py::arg("function"),
+        R"(
                 Completely convert the remaining, not converted part of a function.
 
                 Parameters
@@ -72,10 +79,13 @@ void regclass_pyngraph_FrontEnd(py::module m)
                     Fully converted nGraph function.
              )");
 
-    fem.def("convert_partially",
-            &ngraph::frontend::FrontEnd::convert_partially,
-            py::arg("model"),
-            R"(
+    fe.def(
+        "convert_partially",
+        [](const FrontEndWrapper& frontEnd, ngraph::frontend::InputModel::Ptr model) {
+            return frontEnd.get()->convert_partially(model);
+        },
+        py::arg("model"),
+        R"(
                 Convert only those parts of the model that can be converted leaving others as-is.
                 Converted parts are not normalized by additional transformations; normalize function or
                 another form of convert function should be called to finalize the conversion process.
@@ -91,10 +101,13 @@ void regclass_pyngraph_FrontEnd(py::module m)
                     Partially converted nGraph function.
              )");
 
-    fem.def("decode",
-            &ngraph::frontend::FrontEnd::decode,
-            py::arg("model"),
-            R"(
+    fe.def(
+        "decode",
+        [](const FrontEndWrapper& frontEnd, ngraph::frontend::InputModel::Ptr model) {
+            return frontEnd.get()->decode(model);
+        },
+        py::arg("model"),
+        R"(
                 Convert operations with one-to-one mapping with decoding nodes.
                 Each decoding node is an nGraph node representing a single FW operation node with
                 all attributes represented in FW-independent way.
@@ -110,10 +123,13 @@ void regclass_pyngraph_FrontEnd(py::module m)
                     nGraph function after decoding.
              )");
 
-    fem.def("normalize",
-            &ngraph::frontend::FrontEnd::normalize,
-            py::arg("function"),
-            R"(
+    fe.def(
+        "normalize",
+        [](const FrontEndWrapper& frontEnd, std::shared_ptr<ngraph::Function> function) {
+            return frontEnd.get()->normalize(function);
+        },
+        py::arg("function"),
+        R"(
                 Runs normalization passes on function that was loaded with partial conversion.
 
                 Parameters

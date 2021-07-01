@@ -6,28 +6,31 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 
+#include "frontend.hpp"
 #include "frontend_manager.hpp"
 #include "frontend_manager/frontend_exceptions.hpp"
-#include "frontend_manager/frontend_manager.hpp"
 
 namespace py = pybind11;
 
+namespace py = pybind11;
+using namespace ngraph::frontend;
+
 void regclass_pyngraph_FrontEndManager(py::module m)
 {
-    py::class_<ngraph::frontend::FrontEndManager,
-               std::shared_ptr<ngraph::frontend::FrontEndManager>>
-        fem(m, "FrontEndManager", py::dynamic_attr());
+    py::class_<FrontEndManagerWrapper, std::shared_ptr<FrontEndManagerWrapper>> fem(
+        m, "FrontEndManager", py::dynamic_attr());
     fem.doc() = "ngraph.impl.FrontEndManager wraps ngraph::frontend::FrontEndManager";
 
     fem.def(py::init<>());
 
     // Empty pickle dumps are supported as FrontEndManager doesn't have any state
-    fem.def(py::pickle([](const ngraph::frontend::FrontEndManager&) { return py::make_tuple(0); },
-                       [](py::tuple t) { return ngraph::frontend::FrontEndManager(); }));
+    fem.def(py::pickle([](const FrontEndManagerWrapper&) { return py::make_tuple(0); },
+                       [](py::tuple t) { return FrontEndManagerWrapper(); }));
 
-    fem.def("get_available_front_ends",
-            &ngraph::frontend::FrontEndManager::get_available_front_ends,
-            R"(
+    fem.def(
+        "get_available_front_ends",
+        [](const FrontEndManagerWrapper& fem) { return fem.get()->get_available_front_ends(); },
+        R"(
                 Gets list of registered frontends.
 
                 Returns
@@ -35,11 +38,14 @@ void regclass_pyngraph_FrontEndManager(py::module m)
                 get_available_front_ends : List[str]
                     List of available frontend names.
              )");
-    fem.def("load_by_framework",
-            &ngraph::frontend::FrontEndManager::load_by_framework,
-            py::arg("framework"),
-            py::arg("capabilities") = ngraph::frontend::FrontEndCapabilities::FEC_DEFAULT,
-            R"(
+    fem.def(
+        "load_by_framework",
+        [](const FrontEndManagerWrapper& fem, const std::string& framework, int fec) {
+            return FrontEndWrapper(fem.get(), fem.get()->load_by_framework(framework, fec));
+        },
+        py::arg("framework"),
+        py::arg("capabilities") = ngraph::frontend::FrontEndCapabilities::FEC_DEFAULT,
+        R"(
                 Loads frontend by name of framework and capabilities.
 
                 Parameters
