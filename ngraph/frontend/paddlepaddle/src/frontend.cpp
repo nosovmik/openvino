@@ -44,8 +44,8 @@ namespace ngraph
                                       const std::shared_ptr<OpPlacePDPD>& op_place,
                                       const std::map<std::string, CreatorFunction>& CREATORS_MAP)
             {
-                const auto& op = op_place->get_desc();
-                std::cout << "Making node: " << op->type() << std::endl;
+                const auto& op = op_place->getDesc();
+                // std::cout << "Making node: " << op->type() << std::endl;
 
                 FRONT_END_OP_CONVERSION_CHECK(CREATORS_MAP.find(op->type()) != CREATORS_MAP.end(),
                                               "No creator found for ",
@@ -76,7 +76,7 @@ namespace ngraph
         std::shared_ptr<Function>
             FrontEndPDPD::convert_model(const std::shared_ptr<InputModelPDPD>& model)
         {
-            std::cout << "Convert Model Start" << std::endl;
+            // std::cout << "Convert Model Start" << std::endl;
 
             std::map<pdpd::TensorName, Output<Node>> nodes_dict(model->getTensorValues());
             ParameterVector parameter_nodes;
@@ -98,8 +98,7 @@ namespace ngraph
             const auto& op_places = model->getOpPlaces();
             for (const auto& op_place : op_places)
             {
-                const auto& op_type = op_place->get_desc()->type();
-                std::cerr << "Observing " << op_type << "\n";
+                const auto& op_type = op_place->getDesc()->type();
                 if (op_type == "feed" || op_type == "fetch")
                 {
                     // inputs and outputs are stored in the model already
@@ -120,7 +119,6 @@ namespace ngraph
                                                            ->get_desc();
                         auto node = named_outputs.begin()->second[0].get_node_shared_ptr();
                         node->set_friendly_name(first_output_var->name());
-                        std::cerr << "Named with " << node->get_friendly_name() << "\n";
                     }
 
                     const auto& out_ports = op_place->get_output_ports();
@@ -196,11 +194,8 @@ namespace ngraph
 
         std::shared_ptr<ngraph::Function> FrontEndPDPD::convert(InputModel::Ptr model) const
         {
-            std::cerr << "[ INFO ] PFrontEndPDPD::convert invoked\n";
             auto pdpd_model = std::dynamic_pointer_cast<InputModelPDPD>(model);
             auto f = convert_model(pdpd_model);
-            std::cerr << "[ INFO ] Resulting nGraph function contains " << f->get_ops().size()
-                      << "\n";
             return f;
         }
 

@@ -1,12 +1,15 @@
 # Copyright (C) 2018-2021 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import numpy as np
-import pytest
+import pickle
 
 from ngraph import PartialShape
 from ngraph.frontend import FrontEndCapabilities, FrontEndManager, InitializationFailure
 from ngraph.utils.types import get_element_type
+
+import numpy as np
+
+import pytest
 
 mock_available = True
 try:
@@ -24,6 +27,10 @@ mock_needed = pytest.mark.skipif(not mock_available,
 
 
 # ---------- FrontEnd tests ---------------
+def test_pickle():
+    pickle.dumps(fem)
+
+
 @mock_needed
 def test_load_by_framework_caps():
     frontEnds = fem.get_available_front_ends()
@@ -543,7 +550,3 @@ def test_place_get_source_tensor():
     stat = get_place_stat(place)
     assert stat.get_source_tensor == 2
     assert stat.lastArgInt == 22
-
-
-# if __name__ == '__main__':
-#     test_frontendmanager()

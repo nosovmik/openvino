@@ -6,7 +6,7 @@ cmake_minimum_required (VERSION 3.13)
 
 project (pyngraph)
 
-if(NOT DEFINED OpenVINO_MAIN_SOURCE_DIR)
+if(NOT DEFINED OpenVINO_SOURCE_DIR)
     find_package(InferenceEngineDeveloperPackage QUIET)
     find_package(ngraph REQUIRED)
 endif()
@@ -15,29 +15,14 @@ if(ngraph_FOUND)
     message("ngraph version = {${ngraph_VERSION}}")
 endif()
 
-include(FetchContent)
-
-FetchContent_Declare(
-    pybind11
-    GIT_REPOSITORY "https://github.com/pybind/pybind11.git"
-    GIT_TAG        "v2.5.0"
-)
-
-FetchContent_GetProperties(pybind11)
-if(NOT pybind11_POPULATED)
-    FetchContent_Populate(pybind11)
-    add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
-endif()
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/pybind11 EXCLUDE_FROM_ALL)
 
 # PYTHON_VERSION_MAJOR and PYTHON_VERSION_MINOR are defined inside pybind11
 set(PYTHON_VERSION python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR})
 message("Python version=${PYTHON_VERSION}")
 
-if(OpenVINO_MAIN_SOURCE_DIR)
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_OLD ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_OLD ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY})
-    set(CMAKE_COMPILE_PDB_OUTPUT_DIRECTORY_OLD ${CMAKE_COMPILE_PDB_OUTPUT_DIRECTORY})
-    set(CMAKE_PDB_OUTPUT_DIRECTORY_OLD ${CMAKE_PDB_OUTPUT_DIRECTORY})
+set(LIBRARY_OUTPUT_DIRECTORY_BIN ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
+if(OpenVINO_SOURCE_DIR)
     if(WIN32)
         set(PYTHON_BRIDGE_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/$<CONFIG>/python_api/${PYTHON_VERSION}/)
     else()
@@ -77,11 +62,6 @@ file(GLOB_RECURSE SOURCES src/pyngraph/*.cpp)
 pybind11_add_module(_${PROJECT_NAME} MODULE ${SOURCES})
 
 target_include_directories(_${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_include_directories(_${PROJECT_NAME} PRIVATE "${FRONTEND_INCLUDE_PATH}")
-
-if (NGRAPH_ONNX_IMPORT_ENABLE)
-    target_link_libraries(_${PROJECT_NAME} PRIVATE ngraph::onnx_importer)
-endif()
 
 target_link_libraries(_${PROJECT_NAME} PRIVATE ngraph::ngraph ngraph::frontend_manager)
 
@@ -90,31 +70,26 @@ if (TARGET ngraph::onnx_importer)
 endif()
 
 if(NGRAPH_UNIT_TEST_ENABLE)
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY_OLD})
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_ARCHIVE_OUTPUT_DIRECTORY_OLD})
-    set(CMAKE_COMPILE_PDB_OUTPUT_DIRECTORY ${CMAKE_COMPILE_PDB_OUTPUT_DIRECTORY_OLD})
-    set(CMAKE_PDB_OUTPUT_DIRECTORY ${CMAKE_PDB_OUTPUT_DIRECTORY_OLD})
-    add_subdirectory(mock_py_frontend/mock_py_ngraph_frontend)
+    add_subdirectory(tests/mock/mock_py_ngraph_frontend)
     add_dependencies(_${PROJECT_NAME} mock_py_ngraph_frontend)
+    set_target_properties(mock_py_ngraph_frontend PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${LIBRARY_OUTPUT_DIRECTORY_BIN}
+            ARCHIVE_OUTPUT_DIRECTORY ${LIBRARY_OUTPUT_DIRECTORY_BIN}
+            COMPILE_PDB_OUTPUT_DIRECTORY ${LIBRARY_OUTPUT_DIRECTORY_BIN}
+            PDB_OUTPUT_DIRECTORY ${LIBRARY_OUTPUT_DIRECTORY_BIN})
 
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PYTHON_BRIDGE_OUTPUT_DIRECTORY})
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PYTHON_BRIDGE_OUTPUT_DIRECTORY})
-    set(CMAKE_COMPILE_PDB_OUTPUT_DIRECTORY ${PYTHON_BRIDGE_OUTPUT_DIRECTORY})
-    set(CMAKE_PDB_OUTPUT_DIRECTORY ${PYTHON_BRIDGE_OUTPUT_DIRECTORY})
-    add_subdirectory(mock_py_frontend/pyngraph_fe_mock_api)
+    add_subdirectory(tests/mock/pyngraph_fe_mock_api)
     add_dependencies(_${PROJECT_NAME} pybind_mock_frontend)
-
 endif()
 
 # perform copy
-if(OpenVINO_MAIN_SOURCE_DIR)
+if(OpenVINO_SOURCE_DIR)
     add_custom_command(TARGET _${PROJECT_NAME}
         POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/ngraph ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/ngraph
     )
 endif()
 
-if(OpenVINO_MAIN_SOURCE_DIR OR InferenceEngineDeveloperPackage_FOUND)
+if(OpenVINO_SOURCE_DIR OR InferenceEngineDeveloperPackage_FOUND)
     if(COMMAND ie_python_minimal_api)
         ie_python_minimal_api(_${PROJECT_NAME})
     endif()

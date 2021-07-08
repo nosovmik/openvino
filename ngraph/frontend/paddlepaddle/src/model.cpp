@@ -225,12 +225,8 @@ namespace ngraph
                 weights_file.replace(weights_file.size() - ext.size(), ext.size(), ".pdiparams");
                 weights_stream = std::unique_ptr<std::ifstream>(
                     new std::ifstream(weights_file, std::ios::binary));
-                // if file isn't open it means model don't have constants or path is wrong
-                if (!weights_stream || !weights_stream->is_open())
-                {
-                    std::cerr << "[WARNING:] Cannot open file containing weights: " << weights_file
-                              << std::endl;
-                }
+                // Don't throw error if file isn't opened
+                // It may mean that model don't have constants
             }
             else
             {
@@ -241,9 +237,7 @@ namespace ngraph
             FRONT_END_GENERAL_CHECK(m_fw_ptr->ParseFromIstream(&pb_stream),
                                     "Model can't be parsed");
 
-            std::cout << "Loading places" << std::endl;
             loadPlaces();
-            std::cout << "Loading consts" << std::endl;
             loadConsts(weights_stream ? "" : path, weights_stream.get());
         }
 
@@ -252,11 +246,7 @@ namespace ngraph
             : m_fw_ptr{std::make_shared<ProgramDesc>()}
             , m_input_model(input_model)
         {
-            if (streams.size() == 1)
-            {
-                std::cerr << "[WARNING:] Stream for weights not provided." << std::endl;
-            }
-            else
+            if (streams.size() != 1)
             {
                 FRONT_END_GENERAL_CHECK(
                     streams.size() == 2,
@@ -408,24 +398,24 @@ namespace ngraph
 
         void InputModelPDPD::override_all_outputs(const std::vector<Place::Ptr>& outputs)
         {
-            return _impl->overrideAllOutputs(outputs);
+            _impl->overrideAllOutputs(outputs);
         }
 
         void InputModelPDPD::override_all_inputs(const std::vector<Place::Ptr>& inputs)
         {
-            return _impl->overrideAllInputs(inputs);
+            _impl->overrideAllInputs(inputs);
         }
 
         void InputModelPDPD::extract_subgraph(const std::vector<Place::Ptr>& inputs,
                                               const std::vector<Place::Ptr>& outputs)
         {
-            return _impl->extractSubgraph(inputs, outputs);
+            _impl->extractSubgraph(inputs, outputs);
         }
 
         void InputModelPDPD::set_partial_shape(Place::Ptr place,
                                                const ngraph::PartialShape& p_shape)
         {
-            return _impl->setPartialShape(place, p_shape);
+            _impl->setPartialShape(place, p_shape);
         }
 
         ngraph::PartialShape InputModelPDPD::get_partial_shape(Place::Ptr place) const
@@ -435,12 +425,12 @@ namespace ngraph
 
         void InputModelPDPD::set_element_type(Place::Ptr place, const ngraph::element::Type& type)
         {
-            return _impl->setElementType(place, type);
+            _impl->setElementType(place, type);
         }
 
         void InputModelPDPD::set_tensor_value(Place::Ptr place, const void* value)
         {
-            return _impl->setTensorValue(place, value);
+            _impl->setTensorValue(place, value);
         }
 
     } // namespace frontend
